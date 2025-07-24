@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "polysynergy_nodes_agno"
+version = "0.1.0"
+description = "Agno Node library for PolySynergy"
+authors = ["Dion Snoeijen"]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+polysynergy_node_runner = { path = "../node_runner", develop = true }
+agno = "^1.7.5"
+exa-py = "^1.14.18"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
