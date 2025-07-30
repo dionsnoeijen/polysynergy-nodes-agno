@@ -15,6 +15,7 @@ class ModelOpenAi(ServiceNode):
     api_key: str | None = NodeVariableSettings(
         group="auth",
         dock=True,
+        has_in=True,
         info="Your OpenAI API key for authenticating requests."
     )
 
