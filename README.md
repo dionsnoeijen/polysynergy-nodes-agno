@@ -12,6 +12,8 @@
 
 # PolySynergy Agno Nodes
 
+> 🚀 **Get Started**: This is part of the [PolySynergy Orchestrator](https://github.com/dionsnoeijen/polysynergy-orchestrator) - a visual workflow automation platform. Start there to set up the complete system and begin building AI agent workflows.
+
 > ⚠️ **Development Status**: This project is currently in active development and not yet ready for production use. APIs and functionality may change significantly.
 
 A comprehensive node library for the PolySynergy orchestrator that integrates with the [Agno AI agent framework](https://github.com/agno-agi/agno). This library provides visual, drag-and-drop nodes for building sophisticated AI agent workflows and multi-agent systems within the PolySynergy ecosystem.
