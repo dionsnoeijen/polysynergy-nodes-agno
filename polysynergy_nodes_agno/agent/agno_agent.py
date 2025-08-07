@@ -1,14 +1,12 @@
 import asyncio
 import inspect
 import uuid
-from pprint import pprint
 from textwrap import dedent
 from typing import Literal, cast, Callable
 
 from agno.agent import Agent
 from agno.models.base import Model
 from agno.team import Team
-from httpx import stream
 from polysynergy_node_runner.execution_context.send_flow_event import send_flow_event
 
 from polysynergy_node_runner.setup_context.dock_property import dock_text_area, dock_property, dock_dict
@@ -20,6 +18,7 @@ from polysynergy_node_runner.setup_context.service_node import ServiceNode
 
 from polysynergy_nodes_agno.agent.utils.extract_props_from_settings import extract_props_from_settings
 from polysynergy_nodes_agno.agent.utils.find_connected_model import find_connected_model
+from polysynergy_nodes_agno.agent.utils.find_connected_path_tools import find_connected_path_tools
 from polysynergy_nodes_agno.agent.utils.find_connected_settings import find_connected_settings
 from polysynergy_nodes_agno.agent.utils.find_connected_tools import find_connected_tools
 from polysynergy_nodes_agno.agent.utils.has_connected_agent_or_team import has_connected_agent_or_team
@@ -292,6 +291,13 @@ class AgnoAgent(ServiceNode):
         info="List of tools available to the model. Tools can be functions, Toolkits, or dict definitions.",
     )
 
+    path_tools: str | None = NodeVariableSettings(
+        label="Flow Tools",
+        has_out=True,
+        default=[],
+        info="Flow tools that execute subflows as agent tools."
+    )
+
     # METRICS
 
     metrics: dict = NodeVariableSettings(
@@ -310,22 +316,24 @@ class AgnoAgent(ServiceNode):
 
         settings = find_connected_settings(self)
         tool_info_list = find_connected_tools(self)
+        path_tools = find_connected_path_tools(self)
 
         raw_level = self.debug_level or "1"  # default naar "1" als None of lege string
         debug_level = cast(Literal[1, 2], int(raw_level))
         if model is None:
             raise Exception("No model connected. Please connect a model to the node.")
 
-        return model, settings, tool_info_list, debug_level
+        return model, settings, tool_info_list, path_tools, debug_level
 
     async def _create_agent(self):
-        model, settings, tool_info_list, debug_level = await self._setup()
+        model, settings, tool_info_list, path_tools, debug_level = await self._setup()
         props = extract_props_from_settings(settings)
         self.agent_id = self.agent_id or str(uuid.uuid4())
 
         tool_instances = []
         function_name_to_node_id = {}
 
+        # Add regular tools
         for item in tool_info_list:
             maybe_tool = item["tool"]
             toolkit = await maybe_tool if inspect.iscoroutine(maybe_tool) else maybe_tool
@@ -340,6 +348,13 @@ class AgnoAgent(ServiceNode):
                     )
                     if fn_name:
                         function_name_to_node_id[fn_name] = item["node_id"]
+
+        # Add path tools (flow tools)
+        for path_tool in path_tools or []:
+            tool_instances.append(path_tool)
+            # Path tools are Agno Function objects with name attribute
+            if hasattr(path_tool, 'name'):
+                function_name_to_node_id[path_tool.name] = f"path_tool_{path_tool.name}"
 
         print('TOOLS MAPPING', function_name_to_node_id)
 
