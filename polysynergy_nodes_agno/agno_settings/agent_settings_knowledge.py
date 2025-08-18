@@ -6,6 +6,7 @@ from polysynergy_node_runner.setup_context.dock_property import dock_property
 from polysynergy_node_runner.setup_context.node_decorator import node
 from polysynergy_node_runner.setup_context.node_variable_settings import NodeVariableSettings
 from polysynergy_node_runner.setup_context.service_node import ServiceNode
+from polysynergy_nodes_agno.agno_settings.utils.find_connected_knowledge_base import find_connected_knowledge_base
 
 @node(
     name="Agent Knowledge Settings",
@@ -28,7 +29,7 @@ class AgentSettingsKnowledge(ServiceNode):
     knowledge: AgentKnowledge | None = NodeVariableSettings(
         dock=True,
         has_in=True,
-        info="Knowledge base for retrieval-augmented generation (RAG)."
+        info="Knowledge base for retrieval-augmented generation (RAG). Connect a knowledge base like PDFUrlKnowledgeBase."
     )
 
     knowledge_filters: dict | None = NodeVariableSettings(
@@ -53,6 +54,7 @@ class AgentSettingsKnowledge(ServiceNode):
 
     references_format: str = NodeVariableSettings(
         dock=dock_property(select_values={"json": "json", "yaml": "yaml"}),
+        default="json",
         info="Format used when rendering references in the agent output (json or yaml).",
     )
 
@@ -63,5 +65,9 @@ class AgentSettingsKnowledge(ServiceNode):
         type="polysynergy_nodes_agno.agent.agent_settings_knowledge.AgentSettingsKnowledge"
     )
 
-    def provide_instance(self) -> "AgentSettingsKnowledge":
+    async def provide_instance(self) -> "AgentSettingsKnowledge":
+        """Find connected knowledge base and set it on our knowledge property."""
+        connected_knowledge_base = await find_connected_knowledge_base(self)
+        if connected_knowledge_base:
+            self.knowledge = connected_knowledge_base
         return self

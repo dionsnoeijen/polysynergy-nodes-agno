@@ -1,0 +1,1 @@
+# Storage nodes for Agno agents

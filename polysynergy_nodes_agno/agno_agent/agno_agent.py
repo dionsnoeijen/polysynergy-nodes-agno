@@ -5,8 +5,9 @@ from textwrap import dedent
 from typing import Literal, cast, Callable
 
 from agno.agent import Agent
-from agno.memory import AgentMemory
+from agno.memory.v2.memory import Memory
 from agno.models.base import Model
+from agno.storage.base import Storage
 from agno.team import Team
 from polysynergy_node_runner.execution_context.send_flow_event import send_flow_event
 
@@ -19,11 +20,14 @@ from polysynergy_node_runner.setup_context.service_node import ServiceNode
 
 from polysynergy_nodes_agno.agno_agent.utils.extract_props_from_settings import extract_props_from_settings
 from polysynergy_nodes_agno.agno_agent.utils.find_connected_memory import find_connected_memory
+from polysynergy_nodes_agno.agno_agent.utils.find_connected_memory_settings import find_connected_memory_settings
 from polysynergy_nodes_agno.agno_agent.utils.find_connected_model import find_connected_model
 from polysynergy_nodes_agno.agno_agent.utils.find_connected_path_tools import find_connected_path_tools
 from polysynergy_nodes_agno.agno_agent.utils.find_connected_settings import find_connected_settings
+from polysynergy_nodes_agno.agno_agent.utils.find_connected_storage import find_connected_storage
 from polysynergy_nodes_agno.agno_agent.utils.find_connected_tools import find_connected_tools
 from polysynergy_nodes_agno.agno_agent.utils.has_connected_agent_or_team import has_connected_agent_or_team
+from polysynergy_nodes_agno.agno_agent.utils.send_chat_stream_event import send_chat_stream_event
 
 
 @node(
@@ -44,10 +48,16 @@ class AgnoAgent(ServiceNode):
         has_in=True
     )
 
-    memory: AgentMemory | None = NodeVariableSettings(
+    memory: Memory | None = NodeVariableSettings(
         label="Memory",
         has_in=True,
         info="Memory backend for the agent (e.g., DynamoDB, SQLite)"
+    )
+    
+    storage: Storage | None = NodeVariableSettings(
+        label="Storage", 
+        has_in=True,
+        info="Storage backend for conversation history (e.g., DynamoDB, SQLite)"
     )
 
     debug_mode: bool = NodeVariableSettings(
@@ -104,6 +114,18 @@ class AgnoAgent(ServiceNode):
         dock=True,
         has_in=True,
         info="Default user ID to associate with this agent during runs."
+    )
+
+    session_id: str | None = NodeVariableSettings(
+        dock=True,
+        has_in=True,
+        info="Unique session ID to group messages. Leave empty to auto-generate."
+    )
+
+    session_name: str | None = NodeVariableSettings(
+        dock=True,
+        has_in=True,
+        info="Optional name for the session, useful for debugging or display."
     )
 
     introduction: str | None = NodeVariableSettings(
@@ -313,7 +335,9 @@ class AgnoAgent(ServiceNode):
 
     async def _setup(self):
         model = find_connected_model(self)
-        memory = find_connected_memory(self)
+        memory = await find_connected_memory(self)
+        storage = await find_connected_storage(self)
+        memory_settings = find_connected_memory_settings(self)
 
         settings = find_connected_settings(self)
         tool_info_list = find_connected_tools(self)
@@ -324,10 +348,10 @@ class AgnoAgent(ServiceNode):
         if model is None:
             raise Exception("No model connected. Please connect a model to the node.")
 
-        return model, memory, settings, tool_info_list, path_tools, debug_level
+        return model, memory, storage, memory_settings, settings, tool_info_list, path_tools, debug_level
 
     async def _create_agent(self):
-        model, memory, settings, tool_info_list, path_tools, debug_level = await self._setup()
+        model, memory, storage, memory_settings, settings, tool_info_list, path_tools, debug_level = await self._setup()
         props = extract_props_from_settings(settings)
         self.agent_id = self.agent_id or str(uuid.uuid4())
 
@@ -357,7 +381,14 @@ class AgnoAgent(ServiceNode):
             if hasattr(path_tool, 'name'):
                 function_name_to_node_id[path_tool.name] = f"path_tool_{path_tool.name}"
 
-        print('TOOLS MAPPING', function_name_to_node_id)
+
+        # Update memory database session_id if it exists and session_id is provided
+        # Only do this for databases that support session_id (like our DynamoDB implementation)
+        if memory and hasattr(memory, 'db') and hasattr(memory.db, 'session_id') and self.session_id:
+            if hasattr(memory.db, 'session_id') and memory.db.session_id != self.session_id:
+                memory.db.session_id = self.session_id
+
+
 
         async def tool_hook(function_name: str, function_call: Callable, arguments: dict):
             node_id = function_name_to_node_id.get(function_name, function_name)
@@ -384,30 +415,42 @@ class AgnoAgent(ServiceNode):
 
             return await wrapper()
 
-        self.instance = Agent(
-            model=model,
-            memory=memory,
-            name=self.agent_name,
-            agent_id=self.agent_id,
-            user_id=self.user_id,
-            introduction=dedent(self.introduction) if self.introduction else None,
-            description=dedent(self.description) if self.description else None,
-            instructions=dedent(self.instructions) if self.instructions else None,
-            goal=self.goal,
-            expected_output=dedent(self.expected_output) if self.expected_output else None,
-            retries=self.retries,
-            delay_between_retries=self.delay_between_retries,
-            exponential_backoff=self.exponential_backoff,
-            tools=tool_instances or [],
-            debug_mode=self.debug_mode,
-            debug_level=debug_level,
-            monitoring=self.monitoring,
-            telemetry=self.telemetry,
-            tool_hooks=[tool_hook],
-            events_to_skip=[],
-            stream=True,
-            **props
-        )
+        print('MEMORY SETTINGS', memory_settings)
+        print('PROPS', props)
+
+        try:
+            self.instance = Agent(
+                model=model,
+                memory=memory,
+                storage=storage,
+                name=self.agent_name,
+                agent_id=self.agent_id,
+                user_id=self.user_id,
+                session_id=self.session_id,
+                session_name=self.session_name,
+                introduction=dedent(self.introduction) if self.introduction else None,
+                description=dedent(self.description) if self.description else None,
+                instructions=dedent(self.instructions) if self.instructions else None,
+                goal=self.goal,
+                expected_output=dedent(self.expected_output) if self.expected_output else None,
+                retries=self.retries,
+                delay_between_retries=self.delay_between_retries,
+                exponential_backoff=self.exponential_backoff,
+                tools=tool_instances or [],
+                debug_mode=self.debug_mode,
+                debug_level=debug_level,
+                monitoring=self.monitoring,
+                telemetry=self.telemetry,
+                tool_hooks=[tool_hook],
+                events_to_skip=[],
+                stream=True,
+                **memory_settings,
+                **props
+            )
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            raise
 
     async def provide_instance(self) -> Agent:
         await self._create_agent()
@@ -417,10 +460,13 @@ class AgnoAgent(ServiceNode):
         # if this is part of a team, or a sub for another agent
         # that team or agent will handle the execution
         if has_connected_agent_or_team(self):
-            print('SKIPPED AGENT EXECUTION: connected agent or team found')
             return
 
         await self._create_agent()
+        
+        if not self.prompt:
+            self.false_path = "No prompt provided for agent execution"
+            return
 
         try:
             stream = await self.instance.arun(self.prompt, stream=True, stream_intermediate_steps=True)
@@ -428,7 +474,18 @@ class AgnoAgent(ServiceNode):
             async def _collect_response(generator):
                 final = None
                 async for step in generator:
-                    # print("STEP", step)
+                    # Send chat events for agent responses
+                    if step.event in ["RunResponseContent", "RunResponse", "ToolCallCompleted", "AgentRunResponseContent"]:
+                        node_id = self.id  # Use the agent node's own ID
+                    else:
+                        node_id = None
+                    
+                    send_chat_stream_event(
+                        flow_id=self.context.node_setup_version_id,
+                        run_id=self.context.run_id,
+                        node_id=node_id,
+                        event=step,
+                    )
                     final = step
                 return final
 

@@ -8,6 +8,7 @@ authors = ["Dion Snoeijen"]
 python = "^3.12"
 polysynergy_node_runner = { path = "../node_runner", develop = true }
 agno = "^1.7.5"
+lancedb = "^0.17.0"
 exa-py = "^1.14.18"
 yfinance = "^0.2.65"
 tweepy = "^4.16.0"

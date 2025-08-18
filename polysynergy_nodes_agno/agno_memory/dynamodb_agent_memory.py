@@ -1,8 +1,8 @@
 import os
 from typing import Optional
 
-from agno.memory import AgentMemory
-from agno.storage.dynamodb import DynamoDbStorage
+from agno.memory.v2.memory import Memory
+from polysynergy_nodes_agno.agno_memory.db import DynamoDbMemoryDb
 from polysynergy_node_runner.setup_context.node_decorator import node
 from polysynergy_node_runner.setup_context.node_variable_settings import NodeVariableSettings
 from polysynergy_node_runner.setup_context.service_node import ServiceNode
@@ -17,6 +17,7 @@ from polysynergy_node_runner.setup_context.service_node import ServiceNode
 class DynamoDBAgentMemory(ServiceNode):
     """
     DynamoDB-backed memory for Agno agents.
+    Stores extracted memories from conversations.
     Perfect for serverless/Lambda deployments and persistent memory across sessions.
     """
 
@@ -24,13 +25,13 @@ class DynamoDBAgentMemory(ServiceNode):
         label="Table Name",
         dock=True,
         default="agno_agent_memory",
-        info="Name of the DynamoDB table for storing agent memory",
+        info="Name of the DynamoDB table for storing extracted memories",
     )
 
     region_name: str = NodeVariableSettings(
         label="AWS Region",
         dock=True,
-        default="us-east-1",
+        default="eu-central-1",
         info="AWS region where DynamoDB table is located",
     )
 
@@ -74,38 +75,64 @@ class DynamoDBAgentMemory(ServiceNode):
         info="Generate and store session summaries",
     )
 
-    memory_instance: AgentMemory | None = NodeVariableSettings(
+    memory_instance: Memory | None = NodeVariableSettings(
         label="Memory Instance",
         has_out=True,
-        info="DynamoDB-backed agent memory instance for use in agents",
+        info="DynamoDB-backed memory instance for use in agents",
     )
 
-    async def provide_instance(self) -> AgentMemory:
-        """Create and return DynamoDB-backed AgentMemory instance."""
+    async def provide_instance(self, session_id: str) -> Memory:
+        """Create and return DynamoDB-backed Memory instance."""
         
         # Use environment variables if node values are empty
         access_key = self.aws_access_key_id or os.environ.get("AWS_ACCESS_KEY_ID")
         secret_key = self.aws_secret_access_key or os.environ.get("AWS_SECRET_ACCESS_KEY")
         region = self.region_name or os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
 
-        # Create DynamoDB storage backend
-        storage = DynamoDbStorage(
+        # Get session_id from memory settings that will be used by the agent
+        memory_settings = self.provide_memory_settings()
+
+        # Create DynamoDB memory database
+        memory_db = DynamoDbMemoryDb(
             table_name=self.table_name,
             region_name=region,
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
             endpoint_url=self.endpoint_url,
             create_table_if_not_exists=self.create_table_if_not_exists,
+            session_id=session_id,
         )
 
-        # Create AgentMemory with DynamoDB backend
-        self.memory_instance = AgentMemory(
-            db=storage,
-            create_user_memories=self.create_user_memories,
-            create_session_summary=self.create_session_summary,
+        # Create Memory with DynamoDB backend (v2 API)
+        print(f"Creating Memory v2 with DynamoDB backend")
+        self.memory_instance = Memory(db=memory_db)
+        print(f"Memory v2 created successfully: {self.memory_instance}")
+        print(f"Memory v2 db attribute: {self.memory_instance.db}")
+        
+        # Test if the memory database is working by attempting a test operation
+        from agno.memory.v2.row import MemoryRow
+        test_memory = MemoryRow(
+            id="test_memory",
+            user_id="test_user", 
+            memory={"test": f"Test memory entry for session {session_id}"}
         )
+        print(f"Testing upsert_memory with test data for session_id: {session_id}")
+        try:
+            result = memory_db.upsert_memory(test_memory)
+            print(f"Test upsert result: {result}")
+        except Exception as e:
+            print(f"Test upsert failed: {e}")
+            import traceback
+            traceback.print_exc()
 
         return self.memory_instance
+    
+    def provide_memory_settings(self) -> dict:
+        return {
+            'enable_agentic_memory': True,  # Enable memory when memory node is connected
+            'enable_user_memories': self.create_user_memories,
+            'enable_session_summaries': self.create_session_summary,
+        }
 
     async def execute(self):
         pass

@@ -1,5 +1,5 @@
-from agno.memory import AgentMemory
-from agno.storage.sqlite import SqliteStorage
+from agno.memory.v2.memory import Memory
+from agno.memory.v2.db.sqlite import SqliteMemoryDb
 from polysynergy_node_runner.setup_context.node_decorator import node
 from polysynergy_node_runner.setup_context.node_variable_settings import NodeVariableSettings
 from polysynergy_node_runner.setup_context.service_node import ServiceNode
@@ -14,6 +14,7 @@ from polysynergy_node_runner.setup_context.service_node import ServiceNode
 class LocalAgentMemory(ServiceNode):
     """
     Local SQLite-backed memory for Agno agents.
+    Stores extracted memories from conversations.
     Perfect for development and testing.
     """
 
@@ -21,7 +22,7 @@ class LocalAgentMemory(ServiceNode):
         label="Database File",
         dock=True,
         default="tmp/agent_memory.db",
-        info="Path to SQLite database file for storing agent memory",
+        info="Path to SQLite database file for storing extracted memories",
     )
 
     # Memory settings
@@ -39,29 +40,32 @@ class LocalAgentMemory(ServiceNode):
         info="Generate and store session summaries",
     )
 
-    memory_instance: AgentMemory = NodeVariableSettings(
+    memory_instance: Memory | None = NodeVariableSettings(
         label="Memory Instance",
         has_out=True,
-        info="SQLite-backed agent memory instance for use in agents",
+        info="SQLite-backed memory instance for use in agents",
     )
 
-    async def provide_instance(self) -> AgentMemory:
-        """Create and return SQLite-backed AgentMemory instance."""
+    async def provide_instance(self) -> Memory:
+        """Create and return SQLite-backed Memory instance."""
         
-        # Create SQLite storage backend
-        storage = SqliteStorage(
+        # Create SQLite memory database
+        memory_db = SqliteMemoryDb(
+            table_name="memories",
             db_file=self.db_file,
-            table_name="agent_memory",
         )
 
-        # Create AgentMemory with SQLite backend
-        self.memory_instance = AgentMemory(
-            db=storage,
-            create_user_memories=self.create_user_memories,
-            create_session_summary=self.create_session_summary,
-        )
+        # Create Memory with SQLite backend (v2 API)
+        self.memory_instance = Memory(db=memory_db)
 
         return self.memory_instance
+    
+    def provide_memory_settings(self) -> dict:
+        return {
+            'enable_agentic_memory': True,  # Enable memory when memory node is connected
+            'enable_user_memories': self.create_user_memories,
+            'enable_session_summaries': self.create_session_summary,
+        }
 
     async def execute(self):
         pass

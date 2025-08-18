@@ -12,8 +12,6 @@ class TeamSettingsSession(ServiceNode):
 
     # Settings that can be used by the agent on runtime.
     settings: list = [
-        'session_id',
-        'session_name',
         'session_state',
         'search_previous_sessions_history',
         'num_history_sessions',
@@ -22,16 +20,6 @@ class TeamSettingsSession(ServiceNode):
         'workflow_session_state',
         'add_state_in_messages',
     ]
-
-    session_id: str | None = NodeVariableSettings(
-        dock=True,
-        info="Unique session ID to group messages. Leave empty to auto-generate."
-    )
-
-    session_name: str | None = NodeVariableSettings(
-        dock=True,
-        info="Optional name for the session, useful for debugging or display."
-    )
 
     session_state: dict | None = NodeVariableSettings(
         dock=True,

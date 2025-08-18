@@ -34,6 +34,8 @@ The project uses a modular settings architecture where both agents and teams can
 - **Agent Settings**: Context, History, Knowledge, Memory, Messaging, Reasoning, Response, Session, Storage, Streaming, Team, Tools, Workflow
 - **Team Settings**: Context, History, Knowledge, Reasoning, Session, Storage, Streaming, Structured Output, System Message, Team History, Team Tools, Tools
 
+**Session Properties**: `session_id` and `session_name` are now available directly on the main AgnoAgent and AgnoTeam nodes as input fields, allowing direct configuration without requiring separate session settings nodes. These properties can be connected from prompt nodes or set directly on the agent/team.
+
 ### Tool Integration
 
 Multiple search and research tools are available:
@@ -53,6 +55,98 @@ The project extends `polysynergy_node_runner` framework:
 - Use `NodeVariableSettings` for configurable properties
 - Support both dock UI and programmatic configuration
 - Implement async execution patterns
+
+### Agno Memory and Storage Architecture
+
+The project provides separate node types for Agno's dual storage system:
+
+#### Memory Nodes (`agno_memory/`)
+Store AI-extracted memories and insights from conversations:
+- **LocalAgentMemory**: SQLite-backed memory for development
+- **DynamoDBAgentMemory**: DynamoDB-backed memory for production
+- Uses `agno.memory.v2.memory.Memory` base type
+- Provides `provide_memory_settings()` for agent configuration
+
+#### Storage Nodes (`agno_storage/`)
+Store complete conversation history and session data:
+- **LocalAgentStorage**: SQLite-backed storage for development  
+- **DynamoDBAgentStorage**: DynamoDB-backed storage for production
+- Uses `agno.storage.base.Storage` base type
+- Stores raw conversation logs for history retrieval
+
+#### Type Pattern for Frontend Recognition
+**IMPORTANT**: Always use base interface types in NodeVariableSettings:
+```python
+# Correct - uses base interface type
+memory: Memory | None = NodeVariableSettings(...)
+storage: Storage | None = NodeVariableSettings(...)
+vector_db_instance: VectorDb | None = NodeVariableSettings(...)
+knowledge_base_instance: AgentKnowledge | None = NodeVariableSettings(...)
+
+# Wrong - frontend won't recognize dependency
+memory: SqliteMemory | None = NodeVariableSettings(...)
+vector_db_instance: LanceDb | None = NodeVariableSettings(...)
+knowledge_base_instance: PDFUrlKnowledgeBase | None = NodeVariableSettings(...)
+```
+
+The frontend requires base interface types (`Memory`, `Storage`, `VectorDb`, `AgentKnowledge`) to:
+- Display proper connection types in the UI
+- Enable dependency resolution between nodes
+- Show full module paths for type matching
+
+### Knowledge Management Architecture
+
+The project implements a flexible knowledge management system following Agno's architecture:
+
+#### Vector Database Nodes (`agno_vectordb/`)
+Provide vector storage services that can be connected to any knowledge base:
+- **LanceDBVectorDB**: High-performance vector database built on Apache Arrow
+- Future: QdrantVectorDB, ChromaVectorDB, etc.
+
+#### Knowledge Base Nodes (`agno_knowledge/`)
+Transform various data sources into knowledge bases using connected vector databases:
+- **PDFUrlKnowledge**: Load PDF documents from URLs with metadata filtering
+- Future: PDFFileKnowledge, TextKnowledge, WebKnowledge, etc.
+
+#### Flow Pattern
+```
+LanceDBVectorDB → PDFUrlKnowledge → AgentSettingsKnowledge → Agent
+     ↓                    ↓                    ↓              ↓
+ VectorDb instance  →  AgentKnowledge  →    knowledge    →  Agent()
+```
+
+This architecture provides:
+- **Pluggable Vector Storage**: Any vector DB can be used with any knowledge source
+- **Flexible Knowledge Sources**: PDF, text, web, etc. work with any vector DB
+- **Agno Compatibility**: Follows exact pattern from Agno documentation
+
+### Service Node Development Patterns
+
+#### Critical Service Node Rules
+**IMPORTANT**: When developing service nodes, follow these patterns:
+
+1. **Return Type Matching**: Always use base interface types for output variables:
+   ```python
+   # Correct - frontend can detect compatibility
+   vector_db_instance: VectorDb | None = NodeVariableSettings(...)
+   
+   # Wrong - frontend won't recognize connections
+   vector_db_instance: LanceDb | None = NodeVariableSettings(...)
+   ```
+
+2. **Avoid Redundant Execute Methods**: Service nodes should NOT implement `execute()` unless specifically needed:
+   ```python
+   # Correct - only implement provide_instance()
+   async def provide_instance(self) -> VectorDb:
+       # Create and return instance
+       return self.vector_db_instance
+   
+   # Wrong - leads to double instantiation
+   async def execute(self):
+       await self.provide_instance()  # Redundant call
+   ```
+
+3. **Single Instantiation**: The framework calls `provide_instance()` automatically when needed. Adding `execute()` that calls `provide_instance()` causes the instance to be created twice.
 
 ### Key Utilities
 

@@ -13,29 +13,15 @@ class AgentSettingsSession(ServiceNode):
 
     # Settings that can be used by the agent on runtime.
     settings: list = [
-        'session_id',
-        'session_name',
         'session_state',
         'search_previous_sessions_history',
         'num_history_sessions',
         'cache_session',
     ]
 
-    session_id: str | None = NodeVariableSettings(
-        dock=True,
-        has_in=True,
-        info="Unique session ID to group messages. Leave empty to auto-generate."
-    )
-
-    session_name: str | None = NodeVariableSettings(
-        dock=True,
-        has_in=True,
-        info="Optional name for the session, useful for debugging or display."
-    )
-
     session_state: dict | None = NodeVariableSettings(
         dock=True,
-        info="Internal state object for this session, persisted between runs.",
+        info="Internal state object for this session an, persisted between runs.",
         node=False
     )
 

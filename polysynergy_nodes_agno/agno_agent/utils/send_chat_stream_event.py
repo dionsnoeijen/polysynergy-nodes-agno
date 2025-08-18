@@ -2,6 +2,7 @@ import os
 import json
 import threading
 import logging
+import time
 from dataclasses import asdict
 
 import redis
@@ -9,6 +10,10 @@ import redis
 logger = logging.getLogger(__name__)
 
 _redis = None
+
+# Global sequence counters per run_id to ensure ordering
+_sequence_counters = {}
+_sequence_lock = threading.Lock()
 
 def get_redis():
     redis_url = os.getenv('REDIS_URL', 'redis://redis:6379')
@@ -25,6 +30,13 @@ def get_redis():
 
 def send_chat_stream_event(flow_id: str, run_id: str, node_id: str, event):
     channel = f"chat_stream:{flow_id}"
+    
+    # Get next sequence number for this run (thread-safe)
+    with _sequence_lock:
+        if run_id not in _sequence_counters:
+            _sequence_counters[run_id] = 0
+        _sequence_counters[run_id] += 1
+        sequence_id = _sequence_counters[run_id]
 
     def fire():
         try:
@@ -36,11 +48,24 @@ def send_chat_stream_event(flow_id: str, run_id: str, node_id: str, event):
             else:
                 raise TypeError(f"Cannot serialize event: {type(event)}")
 
+            # Add ordering metadata
             payload['run_id'] = run_id
             payload['node_id'] = node_id
+            payload['sequence_id'] = sequence_id
+            payload['microtime'] = time.time()  # Precise timestamp
+            payload['message_id'] = f"msg_{run_id}_{sequence_id}"
+            
+            logger.debug(f"Sending chat stream event {sequence_id} for run {run_id}")
 
             redis_conn.publish(channel, json.dumps(payload))
         except Exception as e:
             logger.warning(f"[Redis] chat stream publish failed (ignored): {e}")
 
     threading.Thread(target=fire).start()
+
+def cleanup_sequence_counter(run_id: str):
+    """Clean up sequence counter for completed run to prevent memory leaks."""
+    with _sequence_lock:
+        if run_id in _sequence_counters:
+            del _sequence_counters[run_id]
+            logger.debug(f"Cleaned up sequence counter for run {run_id}")
