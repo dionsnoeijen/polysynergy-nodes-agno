@@ -7,7 +7,7 @@ from polysynergy_node_runner.setup_context.service_node import ServiceNode
 
 @node(
     name="XTool",
-    category="tools",
+    category="agno_native_tools",
     icon='agno.svg',
 )
 class XTool(ServiceNode):
