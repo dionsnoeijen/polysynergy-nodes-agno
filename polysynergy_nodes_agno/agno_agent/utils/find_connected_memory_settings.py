@@ -15,5 +15,4 @@ def find_connected_memory_settings(node: Node) -> dict:
         'enable_agentic_memory': False,
         'enable_user_memories': False,
         'enable_session_summaries': False,
-        'create_session_summary': False,
     }
