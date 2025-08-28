@@ -22,9 +22,6 @@ class AgentSettingsTools(ServiceNode):
         'tool_call_limit',
         'tool_choice',
         'tool_hooks',
-        'read_chat_history',
-        'search_knowledge',
-        'update_knowledge',
         'read_tool_call_history',
     ]
 
@@ -57,21 +54,6 @@ class AgentSettingsTools(ServiceNode):
         info="List of middleware functions that are called around tool executions (e.g. for logging or filtering)."
     )
 
-    read_chat_history: bool = NodeVariableSettings(
-        dock=True,
-        info="Adds a tool that allows the model to read the chat history.",
-    )
-
-    search_knowledge: bool = NodeVariableSettings(
-        dock=True,
-        info="Adds a tool that allows the model to search the knowledge base. Only enabled if knowledge is provided.",
-    )
-
-    update_knowledge: bool = NodeVariableSettings(
-        dock=True,
-        info="Adds a tool that allows the model to update the knowledge base.",
-    )
-
     read_tool_call_history: bool = NodeVariableSettings(
         dock=True,
         info="Adds a tool that allows the model to read the history of previous tool calls.",
@@ -84,5 +66,5 @@ class AgentSettingsTools(ServiceNode):
         type="polysynergy_nodes_agno.agent.agent_settings_tools.AgentSettingsTools"
     )
 
-    def provide_instance(self) -> "AgentSettingsTools":
+    async def provide_instance(self) -> "AgentSettingsTools":
         return self

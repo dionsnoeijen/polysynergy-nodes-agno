@@ -47,5 +47,5 @@ class AgentSettingsStreaming(ServiceNode):
         type="polysynergy_nodes_agno.agent.agent_settings_streaming.AgentSettingsStreaming"
     )
 
-    def provide_instance(self) -> "AgentSettingsStreaming":
+    async def provide_instance(self) -> "AgentSettingsStreaming":
         return self

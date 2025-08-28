@@ -35,5 +35,5 @@ class AgentSettingsStorage(ServiceNode):
         type="polysynergy_nodes_agno.agent.agent_settings_storage.AgentSettingsStorage"
     )
 
-    def provide_instance(self) -> "AgentSettingsStorage":
+    async def provide_instance(self) -> "AgentSettingsStorage":
         return self

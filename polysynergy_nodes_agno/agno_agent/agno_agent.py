@@ -19,12 +19,11 @@ from polysynergy_node_runner.setup_context.path_settings import PathSettings
 from polysynergy_node_runner.setup_context.service_node import ServiceNode
 
 from polysynergy_nodes_agno.agno_agent.utils.extract_props_from_settings import extract_props_from_settings
-from polysynergy_nodes_agno.agno_agent.utils.find_connected_memory import find_connected_memory
+from polysynergy_nodes_agno.agno_agent.utils.find_connected_service import find_connected_service
 from polysynergy_nodes_agno.agno_agent.utils.find_connected_memory_settings import find_connected_memory_settings
-from polysynergy_nodes_agno.agno_agent.utils.find_connected_model import find_connected_model
+from polysynergy_nodes_agno.agno_agent.utils.find_connected_storage_settings import find_connected_storage_settings
 from polysynergy_nodes_agno.agno_agent.utils.find_connected_path_tools import find_connected_path_tools
 from polysynergy_nodes_agno.agno_agent.utils.find_connected_settings import find_connected_settings
-from polysynergy_nodes_agno.agno_agent.utils.find_connected_storage import find_connected_storage
 from polysynergy_nodes_agno.agno_agent.utils.find_connected_tools import find_connected_tools
 from polysynergy_nodes_agno.agno_agent.utils.has_connected_agent_or_team import has_connected_agent_or_team
 from polysynergy_nodes_agno.agno_agent.utils.send_chat_stream_event import send_chat_stream_event
@@ -207,14 +206,6 @@ class AgnoAgent(ServiceNode):
                 "value": "polysynergy_nodes_agno.agent.agent_settings_context.AgentSettingsContext",
             },
             {
-                "handle": "history",
-                "has_in": True,
-                "has_out": False,
-                "published": False,
-                "type": "polysynergy_nodes_agno.agent.agent_settings_history.AgentSettingsHistory",
-                "value": "polysynergy_nodes_agno.agent.agent_settings_history.AgentSettingsHistory",
-            },
-            {
                 "handle": "knowledge",
                 "has_in": True,
                 "has_out": False,
@@ -334,25 +325,33 @@ class AgnoAgent(ServiceNode):
     false_path: bool | str | dict = PathSettings("Error", info="This is the path for errors during execution.")
 
     async def _setup(self):
-        model = find_connected_model(self)
-        memory = await find_connected_memory(self)
-        storage = await find_connected_storage(self)
+        model = await find_connected_service(self, "model", Model)
+        memory = await find_connected_service(self, "memory", Memory)
+        storage = await find_connected_service(self, "storage", Storage)
         memory_settings = find_connected_memory_settings(self)
+        storage_settings = find_connected_storage_settings(self)
 
-        settings = find_connected_settings(self)
-        tool_info_list = find_connected_tools(self)
+        settings = await find_connected_settings(self)
+        tool_info_list = await find_connected_tools(self)
         path_tools = find_connected_path_tools(self)
+
+        print('SETTINGS', settings)
 
         raw_level = self.debug_level or "1"  # default naar "1" als None of lege string
         debug_level = cast(Literal[1, 2], int(raw_level))
         if model is None:
             raise Exception("No model connected. Please connect a model to the node.")
 
-        return model, memory, storage, memory_settings, settings, tool_info_list, path_tools, debug_level
+        return model, memory, storage, memory_settings, storage_settings, settings, tool_info_list, path_tools, debug_level
 
     async def _create_agent(self):
-        model, memory, storage, memory_settings, settings, tool_info_list, path_tools, debug_level = await self._setup()
+        print("DEBUG: _create_agent() started, about to call _setup()")
+        model, memory, storage, memory_settings, storage_settings, settings, tool_info_list, path_tools, debug_level = await self._setup()
+        print("DEBUG: _setup() completed successfully")
         props = extract_props_from_settings(settings)
+        
+        # Merge storage settings with props (storage settings take precedence over separate history settings)
+        props.update(storage_settings)
         self.agent_id = self.agent_id or str(uuid.uuid4())
 
         tool_instances = []
@@ -457,12 +456,22 @@ class AgnoAgent(ServiceNode):
         return self.instance
 
     async def execute(self):
+        print("DEBUG: AgnoAgent.execute() started")
+        # Enable debug logging if debug mode is on
+        if self.debug_mode:
+            import logging
+            logging.getLogger("agno").setLevel(logging.DEBUG)
+            logging.getLogger("qdrant_client").setLevel(logging.DEBUG)
+            print(f"[AgnoAgent] Debug mode enabled (level: {self.debug_level})")
+        
         # if this is part of a team, or a sub for another agent
         # that team or agent will handle the execution
         if has_connected_agent_or_team(self):
             return
 
+        print("DEBUG: About to call _create_agent()")
         await self._create_agent()
+        print("DEBUG: _create_agent() completed successfully")
         
         if not self.prompt:
             self.false_path = "No prompt provided for agent execution"

@@ -6,7 +6,7 @@ from polysynergy_node_runner.setup_context.dock_property import dock_property
 from polysynergy_node_runner.setup_context.node_decorator import node
 from polysynergy_node_runner.setup_context.node_variable_settings import NodeVariableSettings
 from polysynergy_node_runner.setup_context.service_node import ServiceNode
-from polysynergy_nodes_agno.agno_settings.utils.find_connected_knowledge_base import find_connected_knowledge_base
+from polysynergy_nodes_agno.agno_agent.utils.find_connected_service import find_connected_service
 
 @node(
     name="Agent Knowledge Settings",
@@ -24,11 +24,15 @@ class AgentSettingsKnowledge(ServiceNode):
         'add_references',
         'retriever',
         'references_format',
+        'search_knowledge',
+        'update_knowledge',
     ]
 
     knowledge: AgentKnowledge | None = NodeVariableSettings(
+        label="Knowledge Base",
         dock=True,
         has_in=True,
+        type="agno.knowledge.agent.AgentKnowledge",
         info="Knowledge base for retrieval-augmented generation (RAG). Connect a knowledge base like PDFUrlKnowledgeBase."
     )
 
@@ -58,6 +62,17 @@ class AgentSettingsKnowledge(ServiceNode):
         info="Format used when rendering references in the agent output (json or yaml).",
     )
 
+    search_knowledge: bool = NodeVariableSettings(
+        dock=True,
+        default=True,
+        info="Adds a tool that allows the model to search the knowledge base. Only enabled if knowledge is provided.",
+    )
+
+    update_knowledge: bool = NodeVariableSettings(
+        dock=True,
+        info="Adds a tool that allows the model to update the knowledge base.",
+    )
+
     instance: "AgentSettingsKnowledge" = NodeVariableSettings(
         label="Settings",
         info="Instance of this node for use in the agent.",
@@ -67,7 +82,18 @@ class AgentSettingsKnowledge(ServiceNode):
 
     async def provide_instance(self) -> "AgentSettingsKnowledge":
         """Find connected knowledge base and set it on our knowledge property."""
-        connected_knowledge_base = await find_connected_knowledge_base(self)
-        if connected_knowledge_base:
-            self.knowledge = connected_knowledge_base
-        return self
+        print(f"[AgentSettingsKnowledge] provide_instance called")
+        
+        try:
+            connected_knowledge_base = await find_connected_service(self, "knowledge", AgentKnowledge)
+            print(f"[AgentSettingsKnowledge] Got knowledge base: {type(connected_knowledge_base).__name__ if connected_knowledge_base else 'None'}")
+            
+            if connected_knowledge_base:
+                self.knowledge = connected_knowledge_base
+                print(f"[AgentSettingsKnowledge] Set knowledge property")
+            
+            print(f"[AgentSettingsKnowledge] Returning self")
+            return self
+        except Exception as e:
+            print(f"[AgentSettingsKnowledge] ERROR: {e}")
+            raise

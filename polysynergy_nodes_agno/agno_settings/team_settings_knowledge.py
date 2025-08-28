@@ -18,6 +18,7 @@ class TeamSettingsKnowledge(ServiceNode):
         'add_references',
         'retriever',
         'references_format',
+        'search_knowledge',
     ]
 
     knowledge: list | None = NodeVariableSettings(
@@ -56,6 +57,12 @@ class TeamSettingsKnowledge(ServiceNode):
         info="Format for references, such as 'json' or 'yaml'.",
     )
 
+    search_knowledge: bool = NodeVariableSettings(
+        dock=True,
+        default=True,
+        info="Add a tool to search the knowledge base (aka Agentic RAG) Only added if knowledge is provided.",
+    )
+
     instance: "TeamSettingsKnowledge" = NodeVariableSettings(
         label="Settings",
         group="knowledge",
@@ -64,5 +71,5 @@ class TeamSettingsKnowledge(ServiceNode):
         type="polysynergy_nodes_agno.agent.team_settings_knowledge.TeamSettingsKnowledge"
     )
 
-    def provide_instance(self) -> "TeamSettingsKnowledge":
+    async def provide_instance(self) -> "TeamSettingsKnowledge":
         return self

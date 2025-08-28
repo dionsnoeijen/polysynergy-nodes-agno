@@ -68,5 +68,5 @@ class AgentSettingsResponseModel(ServiceNode):
         type="polysynergy_nodes_agno.agent.agent_settings_response_model.AgentSettingsResponseModel"
     )
 
-    def provide_instance(self) -> "AgentSettingsResponseModel":
+    async def provide_instance(self) -> "AgentSettingsResponseModel":
         return self

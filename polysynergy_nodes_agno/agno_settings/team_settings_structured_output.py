@@ -60,5 +60,5 @@ class TeamSettingsStructuredOutput(ServiceNode):
         type="polysynergy_nodes_agno.agent.team_settings_structured_output.TeamSettingsStructuredOutput"
     )
 
-    def provide_instance(self) -> "TeamSettingsStructuredOutput":
+    async def provide_instance(self) -> "TeamSettingsStructuredOutput":
         return self

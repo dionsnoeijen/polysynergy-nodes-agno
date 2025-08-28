@@ -90,7 +90,7 @@ class DuckDuckGoTool(ServiceNode):
         info="Whether to verify SSL certificates.",
     )
 
-    def provide_instance(self) -> Toolkit:
+    async def provide_instance(self) -> Toolkit:
         return DuckDuckGoTools(
             search=self.search,
             news=self.news,

@@ -58,5 +58,5 @@ class TeamSettingsReasoning(ServiceNode):
         type="polysynergy_nodes_agno.agent.team_settings_reasoning.TeamSettingsReasoning"
     )
 
-    def provide_instance(self) -> "TeamSettingsReasoning":
+    async def provide_instance(self) -> "TeamSettingsReasoning":
         return self

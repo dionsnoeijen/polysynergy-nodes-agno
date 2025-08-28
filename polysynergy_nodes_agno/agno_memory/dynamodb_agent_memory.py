@@ -81,27 +81,50 @@ class DynamoDBAgentMemory(ServiceNode):
         info="DynamoDB-backed memory instance for use in agents",
     )
 
-    async def provide_instance(self, session_id: str) -> Memory:
+    async def provide_instance(self) -> Memory:
         """Create and return DynamoDB-backed Memory instance."""
         
-        # Use environment variables if node values are empty
-        access_key = self.aws_access_key_id or os.environ.get("AWS_ACCESS_KEY_ID")
-        secret_key = self.aws_secret_access_key or os.environ.get("AWS_SECRET_ACCESS_KEY")
-        region = self.region_name or os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+        # Check if we're running in Lambda
+        is_lambda = (
+            "AWS_EXECUTION_ENV" in os.environ
+            and os.environ["AWS_EXECUTION_ENV"].lower().startswith("aws_lambda")
+        )
+        
+        # Build kwargs for DynamoDbMemoryDb
+        # Use default session_id - the agent will update it later if needed
+        kwargs = {
+            "table_name": self.table_name,
+            "create_table_if_not_exists": self.create_table_if_not_exists,
+            "session_id": "default",
+        }
+        
+        # Always add region if provided
+        if self.region_name:
+            kwargs["region_name"] = self.region_name
+        
+        # Handle credentials based on environment
+        if self.aws_access_key_id and self.aws_secret_access_key:
+            # Explicit credentials provided - use them
+            kwargs["aws_access_key_id"] = self.aws_access_key_id
+            kwargs["aws_secret_access_key"] = self.aws_secret_access_key
+        elif not is_lambda:
+            # Running locally without explicit credentials - use env vars
+            access_key = os.environ.get("AWS_ACCESS_KEY_ID")
+            secret_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
+            if access_key and secret_key:
+                kwargs["aws_access_key_id"] = access_key
+                kwargs["aws_secret_access_key"] = secret_key
+        # else: Running in Lambda - don't pass any credentials, let boto3 use IAM role
+        
+        # Add endpoint URL if provided (for LocalStack)
+        if self.endpoint_url:
+            kwargs["endpoint_url"] = self.endpoint_url
 
         # Get session_id from memory settings that will be used by the agent
         memory_settings = self.provide_memory_settings()
 
         # Create DynamoDB memory database
-        memory_db = DynamoDbMemoryDb(
-            table_name=self.table_name,
-            region_name=region,
-            aws_access_key_id=access_key,
-            aws_secret_access_key=secret_key,
-            endpoint_url=self.endpoint_url,
-            create_table_if_not_exists=self.create_table_if_not_exists,
-            session_id=session_id,
-        )
+        memory_db = DynamoDbMemoryDb(**kwargs)
 
         # Create Memory with DynamoDB backend (v2 API)
         print(f"Creating Memory v2 with DynamoDB backend")
@@ -114,9 +137,9 @@ class DynamoDBAgentMemory(ServiceNode):
         test_memory = MemoryRow(
             id="test_memory",
             user_id="test_user", 
-            memory={"test": f"Test memory entry for session {session_id}"}
+            memory={"test": f"Test memory entry for session {kwargs['session_id']}"}
         )
-        print(f"Testing upsert_memory with test data for session_id: {session_id}")
+        print(f"Testing upsert_memory with test data for session_id: {kwargs['session_id']}")
         try:
             result = memory_db.upsert_memory(test_memory)
             print(f"Test upsert result: {result}")

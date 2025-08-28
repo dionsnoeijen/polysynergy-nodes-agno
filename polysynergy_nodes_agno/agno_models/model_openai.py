@@ -178,7 +178,8 @@ class ModelOpenAi(ServiceNode):
         has_out=True,
     )
 
-    def provide_instance(self) -> Model:
+    async def provide_instance(self) -> Model:
+        print("DEBUG: Inside ModelOpenAi.provide_instance() - ASYNC VERSION")
         self.instance = OpenAIChat(
             api_key=self.api_key,
             organization=self.organization,

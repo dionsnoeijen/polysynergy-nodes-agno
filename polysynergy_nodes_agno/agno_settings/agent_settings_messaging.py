@@ -111,5 +111,5 @@ class AgentSettingsMessaging(ServiceNode):
         type="polysynergy_nodes_agno.agent.agent_settings_messaging.AgentSettingsMessaging"
     )
 
-    def provide_instance(self) -> "AgentSettingsMessaging":
+    async def provide_instance(self) -> "AgentSettingsMessaging":
         return self

@@ -27,12 +27,6 @@ class TeamSettingsTools(ServiceNode):
         info="If True, the agent uses a tool to get information about team members.",
     )
 
-    search_knowledge: bool = NodeVariableSettings(
-        dock=True,
-        default=True,
-        info="Add a tool to search the knowledge base (aka Agentic RAG) Only added if knowledge is provided.",
-    )
-
     read_team_history: bool = NodeVariableSettings(
         dock=True,
         default=False,
@@ -47,5 +41,5 @@ class TeamSettingsTools(ServiceNode):
         type="polysynergy_nodes_agno.agent.team_settings_tools.TeamSettingsTools"
     )
 
-    def provide_instance(self) -> "TeamSettingsTools":
+    async def provide_instance(self) -> "TeamSettingsTools":
         return self

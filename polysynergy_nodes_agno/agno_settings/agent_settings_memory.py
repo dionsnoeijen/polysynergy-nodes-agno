@@ -61,5 +61,5 @@ class AgentSettingsMemory(ServiceNode):
         type="polysynergy_nodes_agno.agent.agent_settings_memory.AgentSettingsMemory"
     )
 
-    def provide_instance(self) -> "AgentSettingsMemory":
+    async def provide_instance(self) -> "AgentSettingsMemory":
         return self

@@ -76,7 +76,7 @@ class XTool(ServiceNode):
         default=False,
     )
 
-    def provide_instance(self) -> XTools:
+    async def provide_instance(self) -> XTools:
         return XTools(
             bearer_token=self.bearer_token,
             consumer_key=self.consumer_key,

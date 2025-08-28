@@ -51,5 +51,5 @@ class TeamSettingsTeamTools(ServiceNode):
         type="polysynergy_nodes_agno.agent.team_settings_team_tools.TeamSettingsTeamTools"
     )
 
-    def provide_instance(self) -> "TeamSettingsTeamTools":
+    async def provide_instance(self) -> "TeamSettingsTeamTools":
         return self

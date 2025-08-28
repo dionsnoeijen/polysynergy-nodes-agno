@@ -28,5 +28,5 @@ class TeamSettingsContext(ServiceNode):
         type="polysynergy_nodes_agno.agent.team_settings_context.TeamSettingsContext"
     )
 
-    def provide_instance(self) -> "TeamSettingsContext":
+    async def provide_instance(self) -> "TeamSettingsContext":
         return self

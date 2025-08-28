@@ -6,6 +6,7 @@ from typing import cast, Literal, Callable
 
 from agno.agent import Agent
 from agno.memory import AgentMemory
+from agno.memory.v2 import Memory
 from agno.models.base import Model
 from agno.team import Team
 
@@ -19,9 +20,8 @@ from polysynergy_node_runner.setup_context.service_node import ServiceNode
 
 from polysynergy_nodes_agno.agno_agent.utils.extract_props_from_settings import extract_props_from_settings
 from polysynergy_nodes_agno.agno_agent.utils.find_connected_members import find_connected_members
-from polysynergy_nodes_agno.agno_agent.utils.find_connected_memory import find_connected_memory
+from polysynergy_nodes_agno.agno_agent.utils.find_connected_service import find_connected_service
 from polysynergy_nodes_agno.agno_agent.utils.find_connected_memory_settings import find_connected_memory_settings
-from polysynergy_nodes_agno.agno_agent.utils.find_connected_model import find_connected_model
 from polysynergy_nodes_agno.agno_agent.utils.find_connected_settings import find_connected_settings
 from polysynergy_nodes_agno.agno_agent.utils.find_connected_tools import find_connected_tools
 from polysynergy_nodes_agno.agno_agent.utils.has_connected_agent_or_team import has_connected_agent_or_team
@@ -313,12 +313,12 @@ class AgnoTeam(ServiceNode):
     false_path: bool | str | dict = PathSettings("Error", info="This is the path for errors during execution.")
 
     async def _setup(self):
-        model = find_connected_model(self)
-        memory = await find_connected_memory(self)
+        model = await find_connected_service(self, "model", Model)
+        memory = await find_connected_service(self, "memory", Memory)
         memory_settings = find_connected_memory_settings(self)
 
         settings = find_connected_settings(self)
-        tool_info_list = find_connected_tools(self)
+        tool_info_list = await find_connected_tools(self)
         member_info_list = await find_connected_members(self)
 
         raw_level = self.debug_level or "1"  # default naar "1" als None of lege string

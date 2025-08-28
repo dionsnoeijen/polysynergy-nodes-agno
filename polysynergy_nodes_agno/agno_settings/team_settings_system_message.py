@@ -67,5 +67,5 @@ class TeamSettingsSystemMessage(ServiceNode):
         type="polysynergy_nodes_agno.agent.team_settings_system_message.TeamSettingsSystemMessage"
     )
 
-    def provide_instance(self) -> "TeamSettingsSystemMessage":
+    async def provide_instance(self) -> "TeamSettingsSystemMessage":
         return self

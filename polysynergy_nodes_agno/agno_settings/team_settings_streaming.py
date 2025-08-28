@@ -53,5 +53,5 @@ class TeamSettingsStreaming(ServiceNode):
         type="polysynergy_nodes_agno.agent.team_settings_streaming.TeamSettingsStreaming"
     )
 
-    def provide_instance(self) -> "TeamSettingsStreaming":
+    async def provide_instance(self) -> "TeamSettingsStreaming":
         return self

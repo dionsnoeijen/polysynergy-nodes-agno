@@ -16,6 +16,7 @@ class AgentSettingsHistory(ServiceNode):
         'add_history_to_messages',
         'num_history_responses',
         'num_history_runs',
+        'read_chat_history',
     ]
 
     add_history_to_messages: bool = NodeVariableSettings(
@@ -33,6 +34,11 @@ class AgentSettingsHistory(ServiceNode):
         info="Number of previous runs to include in the messages for contextual continuity.",
     )
 
+    read_chat_history: bool = NodeVariableSettings(
+        dock=True,
+        info="Adds a tool that allows the model to read the chat history.",
+    )
+
     instance: "AgentSettingsHistory" = NodeVariableSettings(
         label="Settings",
         group="messaging",
@@ -41,5 +47,5 @@ class AgentSettingsHistory(ServiceNode):
         type="polysynergy_nodes_agno.agent.agent_settings_history.AgentSettingsHistory"
     )
 
-    def provide_instance(self) -> "AgentSettingsHistory":
+    async def provide_instance(self) -> "AgentSettingsHistory":
         return self

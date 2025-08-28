@@ -7,6 +7,43 @@ from dataclasses import asdict
 
 import redis
 
+
+class AgnoJSONEncoder(json.JSONEncoder):
+    """Custom JSON encoder for Agno objects that handles complex types."""
+    
+    def default(self, obj):
+        # Handle MessageReferences and similar Agno objects
+        if hasattr(obj, '__dict__'):
+            # Convert object to dict, handling nested objects
+            return self._serialize_object(obj.__dict__)
+        elif hasattr(obj, '_asdict'):  # Handle named tuples
+            return obj._asdict()
+        elif isinstance(obj, (list, tuple)):
+            return [self.default(item) if not self._is_json_serializable(item) else item for item in obj]
+        elif isinstance(obj, dict):
+            return {k: (self.default(v) if not self._is_json_serializable(v) else v) for k, v in obj.items()}
+        else:
+            # For any other non-serializable object, convert to string representation
+            return str(obj)
+    
+    def _serialize_object(self, obj_dict):
+        """Recursively serialize an object's dictionary."""
+        result = {}
+        for key, value in obj_dict.items():
+            if self._is_json_serializable(value):
+                result[key] = value
+            else:
+                result[key] = self.default(value)
+        return result
+    
+    def _is_json_serializable(self, obj):
+        """Check if an object is directly JSON serializable."""
+        try:
+            json.dumps(obj)
+            return True
+        except (TypeError, ValueError):
+            return False
+
 logger = logging.getLogger(__name__)
 
 _redis = None
@@ -57,7 +94,7 @@ def send_chat_stream_event(flow_id: str, run_id: str, node_id: str, event):
             
             logger.debug(f"Sending chat stream event {sequence_id} for run {run_id}")
 
-            redis_conn.publish(channel, json.dumps(payload))
+            redis_conn.publish(channel, json.dumps(payload, cls=AgnoJSONEncoder))
         except Exception as e:
             logger.warning(f"[Redis] chat stream publish failed (ignored): {e}")
 

@@ -58,5 +58,5 @@ class AgentSettingsReasoning(ServiceNode):
         type="polysynergy_nodes_agno.agent.agent_settings_reasoning.AgentSettingsReasoning"
     )
 
-    def provide_instance(self) -> "AgentSettingsReasoning":
+    async def provide_instance(self) -> "AgentSettingsReasoning":
         return self

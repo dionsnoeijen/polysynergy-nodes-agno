@@ -61,5 +61,5 @@ class TeamSettingsHistory(ServiceNode):
         type="polysynergy_nodes_agno.agent.team_settings_history.TeamSettingsHistory"
     )
 
-    def provide_instance(self) -> "TeamSettingsHistory":
+    async def provide_instance(self) -> "TeamSettingsHistory":
         return self

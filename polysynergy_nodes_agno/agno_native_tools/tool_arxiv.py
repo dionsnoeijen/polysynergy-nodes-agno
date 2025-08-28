@@ -41,7 +41,7 @@ class AxrivTool(ServiceNode):
         info="Directory to store downloaded Arxiv papers.",
     )
 
-    def provide_instance(self) -> Toolkit:
+    async def provide_instance(self) -> Toolkit:
 
         path = Path(__file__).parent.joinpath("tmp", "arxiv_pdfs__{session_id}")
 

@@ -1,6 +1,8 @@
 from agno.knowledge import AgentKnowledge
 from agno.knowledge.pdf_url import PDFUrlKnowledgeBase
 from agno.vectordb.base import VectorDb
+from agno.document.chunking.fixed import FixedSizeChunking
+from agno.document.chunking.recursive import RecursiveChunking
 from polysynergy_node_runner.setup_context.dock_property import dock_property, dock_dict
 from polysynergy_node_runner.setup_context.node_decorator import node
 from polysynergy_node_runner.setup_context.node_variable_settings import NodeVariableSettings
@@ -48,25 +50,20 @@ class PDFUrlKnowledge(ServiceNode):
         info="Maximum number of documents to load (optional limit).",
     )
 
-    optimize_on: str | None = NodeVariableSettings(
+    optimize_on: int | None = NodeVariableSettings(
         label="Optimize On",
-        dock=dock_property(select_values={
-            "accuracy": "accuracy",
-            "latency": "latency",
-            "cost": "cost"
-        }),
-        default="accuracy",
-        info="Optimization preference: accuracy, latency, or cost.",
+        dock=True,
+        default=1000,
+        info="Number of documents to optimize the vector database on.",
     )
 
     chunking_strategy: str | None = NodeVariableSettings(
         label="Chunking Strategy", 
         dock=dock_property(select_values={
-            "basic": "basic",
-            "by_title": "by_title",
-            "sentence": "sentence"
+            "fixed": "fixed",
+            "recursive": "recursive"
         }),
-        default="basic",
+        default="fixed",
         info="How to split documents into chunks for embedding.",
     )
 
@@ -98,52 +95,187 @@ class PDFUrlKnowledge(ServiceNode):
     async def provide_instance(self) -> AgentKnowledge:
         """Create and return PDF URL knowledge base instance."""
         
+        print(f"[PDFUrlKnowledge] Starting to create knowledge base instance")
+        
         # Get connected vector database
         vector_db = await self._find_connected_vector_db()
         if not vector_db:
+            print(f"[PDFUrlKnowledge] ERROR: No vector database connected")
             raise ValueError("No vector database connected. Please connect a vector database service node.")
+        
+        print(f"[PDFUrlKnowledge] Connected vector database: {type(vector_db).__name__}")
 
-        # Convert URLs from dock format to expected format
+        # Convert URLs to format expected by PDFUrlKnowledgeBase
+        # Support multiple input formats:
+        # 1. Simple string array: ["url1.pdf", "url2.pdf"]
+        # 2. URL + metadata objects: [{"url": "url1.pdf", "metadata": {...}}]
+        # 3. Dock dict format: [{"key": "url1.pdf", "value": "{}"}]
+        print(f"[PDFUrlKnowledge] Processing URLs input: {self.urls}")
+        print(f"[PDFUrlKnowledge] URLs type: {type(self.urls)}")
+        
         formatted_urls = []
         if self.urls:
-            for url_item in self.urls:
-                if isinstance(url_item, dict):
-                    # Extract URL and metadata from dock dict format
-                    url = url_item.get("key", "")
-                    metadata_str = url_item.get("value", "{}")
-                    
-                    # Parse metadata if it's a string
-                    if isinstance(metadata_str, str):
+            print(f"[PDFUrlKnowledge] Found {len(self.urls)} URL entries to process")
+            for i, url_item in enumerate(self.urls):
+                print(f"[PDFUrlKnowledge] Processing URL {i+1}: {url_item} (type: {type(url_item)})")
+                
+                if isinstance(url_item, str):
+                    # Format 1: Simple string URL
+                    print(f"[PDFUrlKnowledge] Format 1: Simple string URL detected")
+                    # Check if URL contains .pdf (even with query parameters)
+                    if ".pdf" in url_item.lower():
+                        print(f"[PDFUrlKnowledge] URL contains .pdf, adding to list with auto-generated metadata")
+                        
+                        # Auto-add source information for simple string URLs
+                        import os
+                        from urllib.parse import urlparse, unquote
+                        
                         try:
-                            import json
-                            metadata = json.loads(metadata_str) if metadata_str.strip() else {}
-                        except:
-                            metadata = {}
+                            parsed_url = urlparse(url_item)
+                            # Get filename from URL path
+                            filename = os.path.basename(unquote(parsed_url.path))
+                            if not filename or filename == '/':
+                                # Fallback: use last part of domain + timestamp
+                                filename = f"{parsed_url.netloc.split('.')[-2]}_document.pdf"
+                        except Exception as e:
+                            print(f"[PDFUrlKnowledge] Could not extract document name from URL: {e}")
+                            filename = "Unknown Document"
+                        
+                        # Convert simple string URL to dict format with metadata
+                        formatted_url_with_metadata = {
+                            "url": url_item,
+                            "metadata": {
+                                "document_name": filename,
+                                "source_url": url_item
+                            }
+                        }
+                        
+                        print(f"[PDFUrlKnowledge] Auto-added source metadata: document_name='{filename}', source_url='{url_item}'")
+                        formatted_urls.append(formatted_url_with_metadata)
                     else:
-                        metadata = metadata_str or {}
-                    
-                    if url:
-                        formatted_urls.append({
-                            "url": url,
-                            "metadata": metadata
-                        })
+                        print(f"[PDFUrlKnowledge] WARNING: URL does not contain .pdf, skipping: {url_item}")
+                elif isinstance(url_item, dict):
+                    if "url" in url_item:
+                        # Format 2: Already in PDFUrlKnowledgeBase format
+                        print(f"[PDFUrlKnowledge] Format 2: URL+metadata dict detected")
+                        formatted_urls.append(url_item)
+                    elif "key" in url_item:
+                        # Format 3: Dock dict format - convert to PDFUrlKnowledgeBase format
+                        print(f"[PDFUrlKnowledge] Format 3: Dock dict format detected")
+                        url = url_item.get("key", "")
+                        metadata_str = url_item.get("value", "{}")
+                        
+                        # Parse metadata if it's a string
+                        if isinstance(metadata_str, str):
+                            try:
+                                import json
+                                metadata = json.loads(metadata_str) if metadata_str.strip() else {}
+                            except:
+                                metadata = {}
+                        else:
+                            metadata = metadata_str or {}
+                        
+                        if url:
+                            # Auto-add source information if not provided
+                            if "document_name" not in metadata and "source" not in metadata:
+                                # Extract document name from URL
+                                import os
+                                from urllib.parse import urlparse, unquote
+                                
+                                try:
+                                    parsed_url = urlparse(url)
+                                    # Get filename from URL path
+                                    filename = os.path.basename(unquote(parsed_url.path))
+                                    if not filename or filename == '/':
+                                        # Fallback: use last part of domain + timestamp
+                                        filename = f"{parsed_url.netloc.split('.')[-2]}_document.pdf"
+                                    
+                                    # Add source metadata
+                                    metadata["document_name"] = filename
+                                    metadata["source_url"] = url
+                                    print(f"[PDFUrlKnowledge] Auto-added source metadata: document_name='{filename}', source_url='{url}'")
+                                except Exception as e:
+                                    print(f"[PDFUrlKnowledge] Could not extract document name from URL: {e}")
+                                    metadata["document_name"] = "Unknown Document"
+                                    metadata["source_url"] = url
+                            
+                            result = {
+                                "url": url,
+                                "metadata": metadata
+                            }
+                            print(f"[PDFUrlKnowledge] Converted dock format to: {result}")
+                            formatted_urls.append(result)
+                        else:
+                            print(f"[PDFUrlKnowledge] WARNING: Empty URL in dock dict, skipping")
+                    else:
+                        print(f"[PDFUrlKnowledge] WARNING: Unknown dict format, skipping: {url_item}")
+                else:
+                    print(f"[PDFUrlKnowledge] WARNING: Unknown URL format, skipping: {url_item}")
+        else:
+            print(f"[PDFUrlKnowledge] No URLs provided")
+        
+        print(f"[PDFUrlKnowledge] Final formatted URLs: {formatted_urls}")
+        print(f"[PDFUrlKnowledge] Total URLs to process: {len(formatted_urls)}")
 
-        # Prepare constructor arguments
         kwargs = {
             "urls": formatted_urls,
             "vector_db": vector_db,
         }
+        
+        print(f"[PDFUrlKnowledge] Building PDFUrlKnowledgeBase with base kwargs: urls={len(formatted_urls)} items, vector_db={type(vector_db).__name__}")
 
-        # Add optional parameters if provided
         if self.num_documents is not None:
             kwargs["num_documents"] = self.num_documents
+            print(f"[PDFUrlKnowledge] Added num_documents: {self.num_documents}")
+            
         if self.optimize_on:
             kwargs["optimize_on"] = self.optimize_on
+            print(f"[PDFUrlKnowledge] Added optimize_on: {self.optimize_on}")
+            
         if self.chunking_strategy:
-            kwargs["chunking_strategy"] = self.chunking_strategy
+            strategy_map = {
+                "fixed": FixedSizeChunking(),
+                "recursive": RecursiveChunking(),
+            }
+            strategy_instance = strategy_map.get(self.chunking_strategy, FixedSizeChunking())
+            kwargs["chunking_strategy"] = strategy_instance
+            print(f"[PDFUrlKnowledge] Added chunking_strategy: {self.chunking_strategy} -> {type(strategy_instance).__name__}")
+            
         if self.formats:
             kwargs["formats"] = self.formats
+            print(f"[PDFUrlKnowledge] Added formats: {self.formats}")
 
+        print(f"[PDFUrlKnowledge] Creating PDFUrlKnowledgeBase instance with all parameters")
+        
         # Create PDF URL knowledge base instance
-        self.knowledge_base_instance = PDFUrlKnowledgeBase(**kwargs)
-        return self.knowledge_base_instance
+        try:
+            self.knowledge_base_instance = PDFUrlKnowledgeBase(**kwargs)
+            
+            # Override the _is_valid_url method to handle S3 signed URLs
+            original_is_valid_url = self.knowledge_base_instance._is_valid_url
+            
+            def custom_is_valid_url(url: str) -> bool:
+                """Custom URL validation that handles S3 signed URLs with query parameters."""
+                print(f"[PDFUrlKnowledge] Validating URL: {url}")
+                
+                # Check if URL contains .pdf anywhere (not just at the end)
+                if ".pdf" in url.lower():
+                    print(f"[PDFUrlKnowledge] URL is valid (contains .pdf)")
+                    return True
+                else:
+                    print(f"[PDFUrlKnowledge] URL is invalid (no .pdf found)")
+                    return False
+            
+            # Replace the validation method
+            self.knowledge_base_instance._is_valid_url = custom_is_valid_url
+            
+            print(f"[PDFUrlKnowledge] Successfully created PDFUrlKnowledgeBase instance")
+            print(f"[PDFUrlKnowledge] Instance type: {type(self.knowledge_base_instance).__name__}")
+            print(f"[PDFUrlKnowledge] Instance URLs: {self.knowledge_base_instance.urls}")
+            print(f"[PDFUrlKnowledge] Custom URL validation installed")
+            return self.knowledge_base_instance
+        except Exception as e:
+            print(f"[PDFUrlKnowledge] ERROR: Failed to create PDFUrlKnowledgeBase: {e}")
+            import traceback
+            traceback.print_exc()
+            raise

@@ -70,5 +70,5 @@ class AgentSettingsTeam(ServiceNode):
         type="polysynergy_nodes_agno.agent.agent_settings_team.AgentSettingsTeam"
     )
 
-    def provide_instance(self) -> "AgentSettingsTeam":
+    async def provide_instance(self) -> "AgentSettingsTeam":
         return self

@@ -65,5 +65,5 @@ class TeamSettingsSession(ServiceNode):
         type="polysynergy_nodes_agno.agent.team_settings_session.TeamSettingsSession"
     )
 
-    def provide_instance(self) -> "TeamSettingsSession":
+    async def provide_instance(self) -> "TeamSettingsSession":
         return self

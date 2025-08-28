@@ -34,5 +34,5 @@ class TeamSettingsStorage(ServiceNode):
         type="polysynergy_nodes_agno.agent.team_settings_storage.TeamSettingsStorage"
     )
 
-    def provide_instance(self) -> "TeamSettingsStorage":
+    async def provide_instance(self) -> "TeamSettingsStorage":
         return self

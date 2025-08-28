@@ -40,5 +40,5 @@ class AgentSettingsContext(ServiceNode):
         type="polysynergy_nodes_agno.agent.agent_settings_context.AgentSettingsContext"
     )
 
-    def provide_instance(self) -> "AgentSettingsContext":
+    async def provide_instance(self) -> "AgentSettingsContext":
         return self

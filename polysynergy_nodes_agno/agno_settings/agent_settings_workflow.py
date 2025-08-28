@@ -40,5 +40,5 @@ class AgentSettingsWorkflow(ServiceNode):
         type="polysynergy_nodes_agno.agent.agent_settings_workflow.AgentSettingsWorkflow"
     )
 
-    def provide_instance(self) -> "AgentSettingsWorkflow":
+    async def provide_instance(self) -> "AgentSettingsWorkflow":
         return self

@@ -50,5 +50,5 @@ class AgentSettingsSession(ServiceNode):
         type="polysynergy_nodes_agno.agent.agent_settings_session.AgentSettingsSession"
     )
 
-    def provide_instance(self) -> "AgentSettingsSession":
+    async def provide_instance(self) -> "AgentSettingsSession":
         return self
