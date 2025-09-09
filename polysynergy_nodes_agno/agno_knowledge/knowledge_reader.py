@@ -1,5 +1,4 @@
 from agno.knowledge import AgentKnowledge
-from agno.knowledge.pdf_url import PDFUrlKnowledgeBase
 from agno.vectordb.base import VectorDb
 from polysynergy_node_runner.setup_context.node_decorator import node
 from polysynergy_node_runner.setup_context.node_variable_settings import NodeVariableSettings
@@ -30,7 +29,6 @@ class KnowledgeReader(ServiceNode):
     # Vector Database Input (connected from any vector DB service node)
     vector_db: VectorDb | None = NodeVariableSettings(
         label="Vector Database",
-        dock=True,
         has_in=True,
         info="Vector database service with existing knowledge data (e.g., Qdrant, LanceDB).",
     )
@@ -70,12 +68,14 @@ class KnowledgeReader(ServiceNode):
         # Create a minimal PDFUrlKnowledgeBase instance
         # We pass empty URLs since we're not loading any documents
         # The knowledge base will only be used for queries against existing data
-        self.knowledge_base_instance = PDFUrlKnowledgeBase(
-            urls=[],  # Empty - no documents to load
+
+        # in je node.provide_instance()
+        self.knowledge_base_instance = AgentKnowledge(
+            reader=None,
             vector_db=vector_db,
-            # Skip loading by not calling .load()
+            num_documents=5
         )
-        
+
         # Enable debug logging to see if queries are happening
         print(f"[KnowledgeReader] Vector DB search_type: {getattr(vector_db, 'search_type', 'unknown')}")
         print(f"[KnowledgeReader] Vector DB collection: {getattr(vector_db, 'collection', 'unknown')}")

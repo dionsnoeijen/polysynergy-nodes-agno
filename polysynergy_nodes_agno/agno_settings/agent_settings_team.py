@@ -14,7 +14,6 @@ class AgentSettingsTeam(ServiceNode):
     # Settings that can be used by the agent on runtime.
     settings: list = [
         'team_data',
-        'role',
         'respond_directly',
         'add_transfer_instructions',
         'team_response_separator',
@@ -26,11 +25,6 @@ class AgentSettingsTeam(ServiceNode):
     team_data: dict | None = NodeVariableSettings(
         dock=True,
         info="Additional data related to the agent team."
-    )
-
-    role: str | None = NodeVariableSettings(
-        dock=True,
-        info="If this agent is part of a team, this is its role."
     )
 
     respond_directly: bool = NodeVariableSettings(

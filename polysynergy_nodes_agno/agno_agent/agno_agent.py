@@ -26,6 +26,7 @@ from polysynergy_nodes_agno.agno_agent.utils.find_connected_path_tools import fi
 from polysynergy_nodes_agno.agno_agent.utils.find_connected_settings import find_connected_settings
 from polysynergy_nodes_agno.agno_agent.utils.find_connected_tools import find_connected_tools
 from polysynergy_nodes_agno.agno_agent.utils.has_connected_agent_or_team import has_connected_agent_or_team
+from polysynergy_nodes_agno.agno_agent.utils.find_connected_prompt import find_connected_prompt
 from polysynergy_nodes_agno.agno_agent.utils.send_chat_stream_event import send_chat_stream_event
 
 
@@ -125,6 +126,12 @@ class AgnoAgent(ServiceNode):
         dock=True,
         has_in=True,
         info="Optional name for the session, useful for debugging or display."
+    )
+
+    role: str | None = NodeVariableSettings(
+        dock=True,
+        has_in=True,
+        info="If this agent is part of a team, this is its role."
     )
 
     introduction: str | None = NodeVariableSettings(
@@ -339,15 +346,22 @@ class AgnoAgent(ServiceNode):
 
         raw_level = self.debug_level or "1"  # default naar "1" als None of lege string
         debug_level = cast(Literal[1, 2], int(raw_level))
-        if model is None:
-            raise Exception("No model connected. Please connect a model to the node.")
+        # if model is None:
+        #     raise Exception("No model connected. Please connect a model to the node.")
 
         return model, memory, storage, memory_settings, storage_settings, settings, tool_info_list, path_tools, debug_level
 
     async def _create_agent(self):
-        print("DEBUG: _create_agent() started, about to call _setup()")
-        model, memory, storage, memory_settings, storage_settings, settings, tool_info_list, path_tools, debug_level = await self._setup()
-        print("DEBUG: _setup() completed successfully")
+        (model,
+         memory,
+         storage,
+         memory_settings,
+         storage_settings,
+         settings,
+         tool_info_list,
+         path_tools,
+         debug_level
+         ) = await self._setup()
         props = extract_props_from_settings(settings)
         
         # Merge storage settings with props (storage settings take precedence over separate history settings)
@@ -356,6 +370,8 @@ class AgnoAgent(ServiceNode):
 
         tool_instances = []
         function_name_to_node_id = {}
+
+        print('TOOL INFO LIST', tool_info_list)
 
         # Add regular tools
         for item in tool_info_list:
@@ -387,10 +403,10 @@ class AgnoAgent(ServiceNode):
             if hasattr(memory.db, 'session_id') and memory.db.session_id != self.session_id:
                 memory.db.session_id = self.session_id
 
-
-
         async def tool_hook(function_name: str, function_call: Callable, arguments: dict):
             node_id = function_name_to_node_id.get(function_name, function_name)
+
+            print('TOOL HOOK', function_name, node_id, function_call, arguments)
 
             async def wrapper():
                 send_flow_event(
@@ -415,7 +431,21 @@ class AgnoAgent(ServiceNode):
             return await wrapper()
 
         print('MEMORY SETTINGS', memory_settings)
-        print('PROPS', props)
+        print('AGENT PROPS', props)
+
+        # Check for connected prompt node - prompt overrides manual settings
+        prompt_data = find_connected_prompt(self)
+        final_user_id = self.user_id
+        final_session_id = self.session_id
+        final_session_name = self.session_name
+        
+        if prompt_data:
+            final_user_id = prompt_data['user_id']
+            final_session_id = prompt_data['session_id'] 
+            final_session_name = prompt_data['session_name']
+            print(f'PROMPT OVERRIDE: user_id={final_user_id}, session_id={final_session_id}, session_name={final_session_name}')
+        else:
+            print(f'MANUAL SETTINGS: user_id={final_user_id}, session_id={final_session_id}, session_name={final_session_name}')
 
         try:
             self.instance = Agent(
@@ -424,9 +454,10 @@ class AgnoAgent(ServiceNode):
                 storage=storage,
                 name=self.agent_name,
                 agent_id=self.agent_id,
-                user_id=self.user_id,
-                session_id=self.session_id,
-                session_name=self.session_name,
+                user_id=final_user_id,
+                session_id=final_session_id,
+                role=self.role,
+                session_name=final_session_name,
                 introduction=dedent(self.introduction) if self.introduction else None,
                 description=dedent(self.description) if self.description else None,
                 instructions=dedent(self.instructions) if self.instructions else None,
@@ -469,9 +500,7 @@ class AgnoAgent(ServiceNode):
         if has_connected_agent_or_team(self):
             return
 
-        print("DEBUG: About to call _create_agent()")
         await self._create_agent()
-        print("DEBUG: _create_agent() completed successfully")
         
         if not self.prompt:
             self.false_path = "No prompt provided for agent execution"

@@ -1,6 +1,9 @@
+from typing import Any, Union
+
 from agno.knowledge import AgentKnowledge
-from agno.knowledge.pdf_url import PDFUrlKnowledgeBase
+from agno.knowledge.csv_url import CSVUrlKnowledgeBase   # ← zorg dat deze bestaat in jouw Agno
 from agno.vectordb.base import VectorDb
+
 from polysynergy_node_runner.setup_context.dock_property import dock_property, dock_dict
 from polysynergy_node_runner.setup_context.node_decorator import node
 from polysynergy_node_runner.setup_context.node_variable_settings import NodeVariableSettings
@@ -13,38 +16,38 @@ from polysynergy_nodes_agno.agno_knowledge.utils.enrich_metadata import enrich_m
 
 
 @node(
-    name="PDF URL Knowledge Base",
+    name="CSV URL Knowledge",
     category="agno_knowledge",
     icon="brain.svg",
     has_enabled_switch=False,
 )
-class PDFUrlKnowledge(ServiceNode):
+class CSVUrlKnowledge(ServiceNode):
     """
-    PDF URL-based knowledge base for Agno agents.
-    Loads PDF documents from URLs with metadata for filtering.
+    CSV URL-based knowledge base for Agno agents.
+    Loads CSV documents from URLs with metadata for filtering.
     """
 
-    # Vector Database Input (connected from vector DB service nodes)
+    # Vector Database Input
     vector_db: VectorDb | None = NodeVariableSettings(
         label="Vector Database",
         has_in=True,
         info="Connected vector database service for storing and querying document vectors.",
     )
 
-    # PDF URLs with metadata
-    urls: list[dict[str, any]] = NodeVariableSettings(
-        label="PDF URLs",
+    # CSV URLs (string, {url,metadata}, of dock {key,value})
+    urls: list[Union[str, dict[str, Any]]] = NodeVariableSettings(
+        label="CSV URLs",
         has_in=True,
         dock=dock_dict(
             key_label="URL",
             value_label="Metadata",
-            info="List of PDF URLs with optional metadata for filtering."
+            info="List of CSV URLs with optional metadata for filtering."
         ),
         default=[],
-        info="PDF URLs to load with optional metadata (cuisine, source, region, etc.)",
+        info="CSV URLs to load with optional metadata (e.g., source, dataset, region).",
     )
 
-    # Knowledge Base Configuration
+    # Optioneel: max docs / optimize
     num_documents: int | None = NodeVariableSettings(
         label="Max Documents",
         dock=True,
@@ -65,24 +68,16 @@ class PDFUrlKnowledge(ServiceNode):
         info="How to split documents into chunks for embedding.",
     )
 
-    formats: list[str] | None = NodeVariableSettings(
-        label="Supported Formats",
-        dock=True,
-        default=["pdf"],
-        info="Document formats to process (default: pdf).",
-    )
-
     # Output
     knowledge_base_instance: AgentKnowledge | None = NodeVariableSettings(
         label="Knowledge Base Instance",
         has_out=True,
-        info="PDF URL knowledge base instance for use in agents",
+        info="CSV URL knowledge base instance for use in agents",
     )
 
     async def provide_instance(self) -> AgentKnowledge:
-        """Create and return PDF URL knowledge base instance."""
-        # Get connected vector database
-        vector_db = await find_connected_service(self, 'vector_db', VectorDb)
+        # Vector DB
+        vector_db = await find_connected_service(self, "vector_db", VectorDb)
         if not vector_db:
             raise ValueError("No vector database connected. Please connect a vector database service node.")
 
@@ -92,25 +87,17 @@ class PDFUrlKnowledge(ServiceNode):
             "urls": formatted_urls,
             "vector_db": vector_db,
         }
-
         if self.num_documents is not None:
             kwargs["num_documents"] = self.num_documents
-            
-        if self.optimize_on:
+        if self.optimize_on is not None:
             kwargs["optimize_on"] = self.optimize_on
-            
+
         if self.chunking_strategy:
             kwargs["chunking_strategy"] = chunking_strategy(self.chunking_strategy)
-            
-        if self.formats:
-            kwargs["formats"] = self.formats
-
         try:
-            self.knowledge_base_instance = PDFUrlKnowledgeBase(**kwargs)
-            self.knowledge_base_instance._is_valid_url = make_url_validator([".pdf"])
-
+            self.knowledge_base_instance = CSVUrlKnowledgeBase(**kwargs)
+            self.knowledge_base_instance._is_valid_url = make_url_validator([".csv"])
             return self.knowledge_base_instance
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
+        except Exception:
+            import traceback; traceback.print_exc()
             raise

@@ -22,12 +22,10 @@ async def find_connected_service(node: Node, target_handle: str, expected_type: 
     
     for conn in connections:
         service_node = node.state.get_node_by_id(conn.source_node_id)
-        
-        # Handle regular service nodes
-        if hasattr(service_node, "provide_instance") and is_compatible_provider(service_node, expected_type):
+
+        if hasattr(service_node, "provide_instance"):
             return await service_node.provide_instance()
-        
-        # Handle GroupNodes - traverse to find actual service provider
+
         if _is_group_node(service_node):
             actual_service_node = await _find_service_in_group(
                 service_node, conn.source_handle, expected_type, node.state

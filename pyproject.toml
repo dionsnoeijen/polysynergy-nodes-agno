@@ -1,23 +1,25 @@
 [tool.poetry]
 name = "polysynergy_nodes_agno"
-version = "0.1.0"
+version = "0.1.2"
 description = "Agno Node library for PolySynergy"
 authors = ["Dion Snoeijen"]
 
 [tool.poetry.dependencies]
 python = "^3.12"
 polysynergy_node_runner = { path = "../node_runner", develop = true }
-agno = "^1.7.5"
+agno = "^1.8"
 lancedb = "^0.17.0"
 exa-py = "^1.14.18"
-yfinance = "^0.2.65"
 tweepy = "^4.16.0"
-duckduckgo-search = "^8.1.1"
 arxiv = "^2.2.0"
 pypdf = "^5.8.0"
 pycountry = "^24.6.1"
-googlesearch-python = "^1.3.0"
+ddgs = "^9"
 qdrant-client = "^1.15.1"
+python-docx = "^1.2.0"
+textract = "^1.6.5"
+bs4 = "^0.0.2"
+chonkie = "^1.2.1"
 
 [build-system]
 requires = ["poetry-core"]

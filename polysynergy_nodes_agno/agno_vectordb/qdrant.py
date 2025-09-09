@@ -30,6 +30,7 @@ class QdrantVectorDB(ServiceNode):
     url: str = NodeVariableSettings(
         label="Qdrant URL",
         dock=True,
+        has_in=True,
         default="http://localhost:6333",
         info="Qdrant server URL. Use Qdrant Cloud URL for serverless deployments.",
     )
@@ -44,6 +45,7 @@ class QdrantVectorDB(ServiceNode):
     api_key: str | None = NodeVariableSettings(
         label="API Key",
         dock=True,
+        has_in=True,
         info="API key for Qdrant Cloud (required for cloud deployments).",
     )
 

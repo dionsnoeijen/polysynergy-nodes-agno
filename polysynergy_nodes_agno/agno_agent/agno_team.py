@@ -8,6 +8,7 @@ from agno.agent import Agent
 from agno.memory import AgentMemory
 from agno.memory.v2 import Memory
 from agno.models.base import Model
+from agno.storage.base import Storage
 from agno.team import Team
 
 from polysynergy_node_runner.execution_context.send_flow_event import send_flow_event
@@ -23,8 +24,10 @@ from polysynergy_nodes_agno.agno_agent.utils.find_connected_members import find_
 from polysynergy_nodes_agno.agno_agent.utils.find_connected_service import find_connected_service
 from polysynergy_nodes_agno.agno_agent.utils.find_connected_memory_settings import find_connected_memory_settings
 from polysynergy_nodes_agno.agno_agent.utils.find_connected_settings import find_connected_settings
+from polysynergy_nodes_agno.agno_agent.utils.find_connected_storage_settings import find_connected_storage_settings
 from polysynergy_nodes_agno.agno_agent.utils.find_connected_tools import find_connected_tools
 from polysynergy_nodes_agno.agno_agent.utils.has_connected_agent_or_team import has_connected_agent_or_team
+from polysynergy_nodes_agno.agno_agent.utils.find_connected_prompt import find_connected_prompt
 from polysynergy_nodes_agno.agno_agent.utils.send_chat_stream_event import send_chat_stream_event
 
 
@@ -95,6 +98,12 @@ class AgnoTeam(ServiceNode):
         label="Memory",
         has_in=True,
         info="Memory backend for the team (e.g., DynamoDB, SQLite)"
+    )
+
+    storage: Storage | None = NodeVariableSettings(
+        label="Storage",
+        has_in=True,
+        info="Storage backend for conversation history (e.g., DynamoDB, SQLite)"
     )
 
     agent_or_team: Agent | Team | None = NodeVariableSettings(
@@ -315,9 +324,11 @@ class AgnoTeam(ServiceNode):
     async def _setup(self):
         model = await find_connected_service(self, "model", Model)
         memory = await find_connected_service(self, "memory", Memory)
+        storage = await find_connected_service(self, "storage", Storage)
         memory_settings = find_connected_memory_settings(self)
+        storage_settings = find_connected_storage_settings(self, True)
 
-        settings = find_connected_settings(self)
+        settings = await find_connected_settings(self)
         tool_info_list = await find_connected_tools(self)
         member_info_list = await find_connected_members(self)
 
@@ -329,14 +340,27 @@ class AgnoTeam(ServiceNode):
         if model is None:
             raise Exception("No model connected. Please connect a model to the node.")
 
-        return model, memory, memory_settings, settings, debug_level, mode, tool_info_list, member_info_list
+        return model, memory, storage, memory_settings, storage_settings, settings, debug_level, mode, tool_info_list, member_info_list
 
     async def _create_team(self):
-        model, memory, memory_settings, settings, debug_level, mode, tool_info_list, member_info_list = await self._setup()
+        (model,
+         memory,
+         storage,
+         memory_settings,
+         storage_settings,
+         settings,
+         debug_level,
+         mode,
+         tool_info_list,
+         member_info_list
+         ) = await self._setup()
         props = extract_props_from_settings(settings)
-        self.team_id = self.team_id or str(uuid.uuid4())
 
+        props.update(storage_settings)
+
+        self.team_id = self.team_id or str(uuid.uuid4())
         self.map_member_id_to_node_id = {}
+
         tool_instances = []
         member_instances = []
         function_name_to_node_id = {}
@@ -393,6 +417,21 @@ class AgnoTeam(ServiceNode):
 
             return await wrapper()
 
+        print('TEAM PROPS', props)
+
+        # Check for connected prompt node - prompt overrides manual settings
+        prompt_data = find_connected_prompt(self)
+        final_user_id = self.user_id
+        final_session_id = self.session_id
+        final_session_name = self.session_name
+        
+        if prompt_data:
+            final_user_id = prompt_data['user_id']
+            final_session_id = prompt_data['session_id'] 
+            final_session_name = prompt_data['session_name']
+            print(f'TEAM PROMPT OVERRIDE: user_id={final_user_id}, session_id={final_session_id}, session_name={final_session_name}')
+        else:
+            print(f'TEAM MANUAL SETTINGS: user_id={final_user_id}, session_id={final_session_id}, session_name={final_session_name}')
 
         self.instance = Team(
             name=self.team_name,
@@ -401,10 +440,11 @@ class AgnoTeam(ServiceNode):
             mode=mode,
             model=model,
             memory=memory,
+            storage=storage,
             team_id=self.team_id,
-            user_id=self.user_id,
-            session_id=self.session_id,
-            session_name=self.session_name,
+            user_id=final_user_id,
+            session_id=final_session_id,
+            session_name=final_session_name,
             instructions=dedent(self.instructions) if self.instructions else None,
             description=dedent(self.description) if self.description else None,
             expected_output=dedent(self.expected_output) if self.expected_output else None,
@@ -424,48 +464,96 @@ class AgnoTeam(ServiceNode):
         await self._create_team()
         return self.instance
 
+    # ... unchanged setup above ...
+
     async def execute(self):
-        # if this is part of a team, or a sub for another agent
-        # that team or agent will handle the execution
         if has_connected_agent_or_team(self):
             return
 
         await self._create_team()
-
         self.map_member_id_to_node_id[self.instance.team_id] = self.id
 
         try:
-            stream = await self.instance.arun(
-                self.prompt,
-                stream=True,
-            )
+            stream = await self.instance.arun(self.prompt, stream=True)
+
+            overall_parts: list[str] = []
+            per_member_parts: dict[str | None, list[str]] = {}
+            final_response_text: str | None = None
 
             async def _collect_response(generator):
-                final = None
+                nonlocal final_response_text
                 async for step in generator:
-                    # Map events to the correct node based on agent_id or team_id
-                    if step.event in ["RunResponseContent", "TeamRunResponseContent", "TeamToolCallCompleted", "AgentRunResponseContent", "ToolCallCompleted"]:
-                        node_id = (
-                            self.map_member_id_to_node_id.get(getattr(step, "agent_id", None)) or
-                            self.map_member_id_to_node_id.get(getattr(step, "team_id", None)) or
-                            self.id  # Fallback to team node ID for unmapped events
-                        )
-                    else:
-                        node_id = None
+                    if step.event in ["RunResponseContent", "TeamRunResponseContent",
+                                      "AgentRunResponseContent"]:
+                        agent_id = getattr(step, "agent_id", None)
+                        team_id = getattr(step, "team_id", None)
+                        node_id = (self.map_member_id_to_node_id.get(agent_id)
+                                   or self.map_member_id_to_node_id.get(team_id)
+                                   or self.id)
 
+                        chunk = getattr(step, "content", None)
+                        if chunk:
+                            overall_parts.append(chunk)
+                            per_member_parts.setdefault(node_id, []).append(chunk)
+
+                    # still stream events to UI
                     send_chat_stream_event(
                         flow_id=self.context.node_setup_version_id,
                         run_id=self.context.run_id,
-                        node_id=node_id,
+                        node_id=(self.map_member_id_to_node_id.get(getattr(step, "agent_id", None))
+                                 or self.map_member_id_to_node_id.get(getattr(step, "team_id", None))
+                                 or self.id) if step.event in
+                                                ["RunResponseContent", "TeamRunResponseContent",
+                                                 "TeamToolCallCompleted", "AgentRunResponseContent",
+                                                 "ToolCallCompleted"] else None,
                         event=step,
                     )
-                    final = step
-                return final
 
-            response = await _collect_response(stream)
+                    if step.event in ["TeamRunResponse", "RunResponse", "AgentRunResponse"]:
+                        content = getattr(step, "content", None)
+                        if content:
+                            final_response_text = content
 
-            self.true_path = response.content
-            self.metrics = self.instance.run_response.metrics
+            await _collect_response(stream)
+
+            # ⬇️ persist member responses NOW (after collection)
+            storage = self.context.storage
+            flow_id = self.context.node_setup_version_id
+            run_id = self.context.run_id
+
+            for node_id, parts in per_member_parts.items():
+                if not node_id or node_id == self.id:
+                    continue
+                final_text = "".join(parts)
+
+                # If you have the order, use it; otherwise let the upsert finder resolve it
+                try:
+                    order = next(
+                        x["order"] for x in self.context.execution_flow["nodes_order"]
+                        if x["id"] == node_id
+                    )
+                except StopIteration:
+                    order = None
+
+                # uses your helper that updates the existing node record
+                storage.set_node_true_path(
+                    flow_id=flow_id,
+                    run_id=run_id,
+                    node_id=node_id,
+                    true_text=final_text,
+                    order=order,
+                    stage=self.context.stage,
+                    sub_stage=self.context.sub_stage,
+                )
+
+            if not final_response_text:
+                final_response_text = "".join(overall_parts) if overall_parts else ""
+
+            self.true_path = final_response_text
+            self.metrics = getattr(self.instance, "run_response", None)
+            if self.metrics:
+                self.metrics = self.instance.run_response.metrics
+
         except Exception as e:
             self.false_path = NodeError.format(e, True)
             return

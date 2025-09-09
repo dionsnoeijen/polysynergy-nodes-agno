@@ -10,7 +10,7 @@ from polysynergy_node_runner.setup_context.service_node import ServiceNode
 )
 class TeamSettingsTeamHistory(ServiceNode):
 
-    settinsgs: list = [
+    settings: list = [
         'enable_team_history',
         'add_history_to_messages',
         'num_of_interactions_from_history',
@@ -36,7 +36,7 @@ class TeamSettingsTeamHistory(ServiceNode):
 
     num_history_runs: int = NodeVariableSettings(
         dock=True,
-        default=3,
+        default=20,
         info="The number of runs to include in the team history.",
     )
 

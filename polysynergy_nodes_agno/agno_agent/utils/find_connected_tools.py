@@ -20,7 +20,8 @@ async def find_connected_tools(node: Node) -> list[dict]:
                     "node_id": target_node.id,
                     "tool": tool_instance
                 })
-            except Exception:
+            except Exception as e:
+                print(f"[ERROR] instantiating tool from node {target_node.id}: {e}")
                 pass  # Skip tools that can't be instantiated
 
     return tools

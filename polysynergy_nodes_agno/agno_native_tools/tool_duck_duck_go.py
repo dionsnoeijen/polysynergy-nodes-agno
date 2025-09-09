@@ -1,3 +1,4 @@
+from typing import Optional
 from agno.agent import Agent
 from agno.team import Team
 from agno.tools import Toolkit
@@ -6,32 +7,36 @@ from polysynergy_node_runner.setup_context.node_variable_settings import NodeVar
 from polysynergy_node_runner.setup_context.service_node import ServiceNode
 from agno.tools.duckduckgo import DuckDuckGoTools
 
+
 @node(
     name="DuckDuckGo Tool",
     category="agno_native_tools",
-    icon='agno.svg',
+    icon="agno.svg",
     has_enabled_switch=False,
 )
 class DuckDuckGoTool(ServiceNode):
     """
-    DuckDuckGo is a toolkit for searching DuckDuckGo easily.
-    Args:
-        search (bool): Enable DuckDuckGo search function.
-        news (bool): Enable DuckDuckGo news function.
-        modifier (Optional[str]): A modifier to be used in the search request.
-        fixed_max_results (Optional[int]): A fixed number of maximum results.
-        headers (Optional[Any]): Headers to be used in the search request.
-        proxy (Optional[str]): Proxy to be used in the search request.
-        proxies (Optional[Any]): A list of proxies to be used in the search request.
-        timeout (Optional[int]): The maximum number of seconds to wait for a response.`
+    DuckDuckGo toolkit (DDGS backend).
 
+    Args (ondersteund door huidige DuckDuckGoTools):
+        search (bool): Exposeeer algemene search.
+        news (bool): Exposeeer nieuwszoekfunctie.
+        modifier (str|None): Voorvoegsel voor query (bv. 'site:example.com').
+        fixed_max_results (int|None): Forceer max results.
+        proxy (str|None): Door aan DDGS(proxy=...).
+        timeout (int|None): Door aan DDGS(timeout=...).
+        verify_ssl (bool): Door aan DDGS(verify=...).
+
+    Let op: 'headers' en 'proxies' worden niet meer ondersteund door de toolkit.
     """
 
+    # Koppeling vanuit agent/team (finder zoekt naar target_handle == "agent_or_team")
     agent_or_team: Agent | Team | None = NodeVariableSettings(
         has_in=True,
         info="Specify whether this tool is for an agent or a team.",
     )
 
+    # Instelbare opties (sluiten aan op DuckDuckGoTools __init__)
     search: bool = NodeVariableSettings(
         label="Search",
         default=True,
@@ -46,59 +51,46 @@ class DuckDuckGoTool(ServiceNode):
         info="Enable DuckDuckGo news function.",
     )
 
-    modifier: str | None = NodeVariableSettings(
+    modifier: Optional[str] = NodeVariableSettings(
         label="Modifier",
         dock=True,
-        info="A modifier to be used in the search request.",
+        info="A modifier to be used in the search request (e.g., 'site:example.com').",
     )
 
-    fixed_max_results: int | None = NodeVariableSettings(
+    fixed_max_results: Optional[int] = NodeVariableSettings(
         label="Fixed Max Results",
         dock=True,
-        info="A fixed number of maximum results.",
+        info="Force a maximum number of results (overrides runtime max_results).",
     )
 
-    headers: dict | None = NodeVariableSettings(
-        label="Headers",
-        dock=True,
-        info="Headers to be used in the search request.",
-    )
-
-    proxy: str | None = NodeVariableSettings(
+    proxy: Optional[str] = NodeVariableSettings(
         label="Proxy",
         dock=True,
-        info="Proxy to be used in the search request.",
-    )
-
-    proxies: dict | None = NodeVariableSettings(
-        label="Proxies",
-        dock=True,
-        info="A list of proxies to be used in the search request.",
+        info="Proxy passed to DDGS.",
     )
 
     timeout: int = NodeVariableSettings(
-        label="Timeout",
+        label="Timeout (seconds)",
         default=10,
         dock=True,
-        info="The maximum number of seconds to wait for a response.",
+        info="Maximum seconds to wait for a response.",
     )
 
     verify_ssl: bool = NodeVariableSettings(
         label="Verify SSL",
         default=True,
         dock=True,
-        info="Whether to verify SSL certificates.",
+        info="Verify SSL certificates (maps to DDGS(verify=...)).",
     )
 
     async def provide_instance(self) -> Toolkit:
+        # Direct conform de huidige DuckDuckGoTools signature
         return DuckDuckGoTools(
             search=self.search,
             news=self.news,
             modifier=self.modifier,
             fixed_max_results=self.fixed_max_results,
-            headers=self.headers,
             proxy=self.proxy,
-            proxies=self.proxies,
             timeout=self.timeout,
-            verify_ssl=self.verify_ssl
+            verify_ssl=self.verify_ssl,
         )

@@ -21,7 +21,6 @@ class KnowledgeBaseLoad(Node):
     # Input
     knowledge_base: AgentKnowledge | None = NodeVariableSettings(
         label="Knowledge Base",
-        dock=True,
         has_in=True,
         info="Knowledge base to load documents into (e.g., PDFUrlKnowledgeBase).",
     )
