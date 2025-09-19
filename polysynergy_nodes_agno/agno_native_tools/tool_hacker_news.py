@@ -39,6 +39,9 @@ class HackerNewsTool(ServiceNode):
         info="Enable getting user details from Hacker News.",
     )
 
+    # Set by tool calling mechanism
+    output: str | None = None
+
     async def provide_instance(self) -> Toolkit:
         return HackerNewsTools(
             get_top_stories=self.get_top_stories,

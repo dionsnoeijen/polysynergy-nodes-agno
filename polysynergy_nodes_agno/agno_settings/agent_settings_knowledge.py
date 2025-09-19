@@ -1,7 +1,9 @@
 from __future__ import annotations
 from typing import Callable
 
-from agno.knowledge import AgentKnowledge
+from agno.knowledge import Knowledge
+from agno.vectordb import VectorDb
+
 from polysynergy_node_runner.setup_context.dock_property import dock_property
 from polysynergy_node_runner.setup_context.node_decorator import node
 from polysynergy_node_runner.setup_context.node_variable_settings import NodeVariableSettings
@@ -28,12 +30,11 @@ class AgentSettingsKnowledge(ServiceNode):
         'update_knowledge',
     ]
 
-    knowledge: AgentKnowledge | None = NodeVariableSettings(
-        label="Knowledge Base",
-        dock=True,
+    vector_db: VectorDb | None = NodeVariableSettings(
+        label="Vector Database",
         has_in=True,
-        type="agno.knowledge.agent.AgentKnowledge",
-        info="Knowledge base for retrieval-augmented generation (RAG). Connect a knowledge base like PDFUrlKnowledgeBase."
+        info="Connected vector database service for storing and querying document vectors.",
+        type="agno.vectordb.base.VectorDb",
     )
 
     knowledge_filters: dict | None = NodeVariableSettings(
@@ -73,6 +74,7 @@ class AgentSettingsKnowledge(ServiceNode):
         info="Adds a tool that allows the model to update the knowledge base.",
     )
 
+
     instance: "AgentSettingsKnowledge" = NodeVariableSettings(
         label="Settings",
         info="Instance of this node for use in the agent.",
@@ -80,19 +82,14 @@ class AgentSettingsKnowledge(ServiceNode):
         type="polysynergy_nodes_agno.agent.agent_settings_knowledge.AgentSettingsKnowledge"
     )
 
+    knowledge: Knowledge | None = None
+
     async def provide_instance(self) -> "AgentSettingsKnowledge":
-        """Find connected knowledge base and set it on our knowledge property."""
-        print(f"[AgentSettingsKnowledge] provide_instance called")
-        
         try:
-            connected_knowledge_base = await find_connected_service(self, "knowledge", AgentKnowledge)
-            print(f"[AgentSettingsKnowledge] Got knowledge base: {type(connected_knowledge_base).__name__ if connected_knowledge_base else 'None'}")
-            
-            if connected_knowledge_base:
-                self.knowledge = connected_knowledge_base
-                print(f"[AgentSettingsKnowledge] Set knowledge property")
-            
-            print(f"[AgentSettingsKnowledge] Returning self")
+            connected_vector_db = await find_connected_service(self, "vector_db", VectorDb)
+            print(f"[AgentSettingsKnowledge] Got knowledge base: {type(connected_vector_db).__name__ if connected_vector_db else 'None'}")
+            if connected_vector_db:
+                self.knowledge = Knowledge(vector_db=connected_vector_db)
             return self
         except Exception as e:
             print(f"[AgentSettingsKnowledge] ERROR: {e}")

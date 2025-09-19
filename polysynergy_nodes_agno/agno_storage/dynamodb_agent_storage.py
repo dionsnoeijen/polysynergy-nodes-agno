@@ -7,7 +7,7 @@ from polysynergy_node_runner.setup_context.node_decorator import node
 from polysynergy_node_runner.setup_context.node_variable_settings import NodeVariableSettings
 from polysynergy_node_runner.setup_context.service_node import ServiceNode
 
-from polysynergy_nodes_agno.agno_storage.wrappers.dynamodb_agent_storage_wrapper import DeltaStorageWrapper
+from polysynergy_nodes_agno.agno_storage.wrappers.run_separated_storage_wrapper import RunSeparatedStorageWrapper
 
 
 @node(
@@ -73,21 +73,6 @@ class DynamoDBAgentStorage(ServiceNode):
         info="Adds a tool that allows the model to read the chat history.",
     )
 
-    persist_delta_only: bool = NodeVariableSettings(
-        label="Store Only Last Turn (Delta)",
-        dock=True,
-        default=True,
-        info=(
-            "⚡ Storage optimization: when saving, only the most recent turn "
-            "(the latest user message + the latest agent reply) is persisted. "
-            "This prevents duplicate data and oversized JSON records.\n\n"
-            "➡ Note: this setting only affects how chat history is stored. "
-            "The agent still has full conversational context based on "
-            "'add_history_to_messages' and 'num_history_runs'. "
-            "The AI can therefore use multiple past turns in its reasoning."
-        ),
-    )
-
     storage_instance: Storage | None = NodeVariableSettings(
         label="Storage Instance",
         has_out=True,
@@ -101,7 +86,10 @@ class DynamoDBAgentStorage(ServiceNode):
             and os.environ["AWS_EXECUTION_ENV"].lower().startswith("aws_lambda")
         )
 
-        kwargs = {"table_name": self.table_name}
+        # Detect storage mode by checking what's connected to our output
+        detected_mode = self._detect_storage_mode()
+
+        kwargs = {"table_name": self.table_name, "mode": detected_mode}
         if self.region_name:
             kwargs["region_name"] = self.region_name
 
@@ -121,11 +109,35 @@ class DynamoDBAgentStorage(ServiceNode):
             kwargs["endpoint_url"] = self.endpoint_url
 
         base = DynamoDbStorage(**kwargs)
-        self.storage_instance = DeltaStorageWrapper(base) if self.persist_delta_only else base
+        # Use optimized wrapper with fixed session handling
+        self.storage_instance = RunSeparatedStorageWrapper(base)
 
-        print(f"{self.storage_instance.__class__.__name__} initialized with table '{self.table_name}' in region '{self.region_name}'")
+        print(f"DynamoDbStorage with RunSeparatedStorageWrapper initialized with table '{self.table_name}' in region '{self.region_name}' in mode '{detected_mode}'")
 
         return self.storage_instance
+    
+    def _detect_storage_mode(self) -> str:
+        """Detect storage mode by looking at what's connected to our storage_instance output."""
+        # Get outgoing connections from our storage_instance output
+        storage_connections = [c for c in self.get_out_connections() if c.source_handle == "storage_instance"]
+        
+        for conn in storage_connections:
+            target_node = self.state.get_node_by_id(conn.target_node_id)
+            if target_node:
+                # Check node class name or handle to determine if it's team/agent/workflow
+                node_class = target_node.__class__.__name__
+                node_handle = getattr(target_node, 'handle', '')
+
+                if 'Team' in node_class:
+                    return "team"
+                elif 'Workflow' in node_class:
+                    return "workflow"
+                elif 'Agent' in node_class:
+                    return "agent"
+        
+        # Default to agent mode if nothing detected
+        print("[DEBUG] No specific mode detected, defaulting to 'agent'")
+        return "agent"
 
     def provide_storage_settings(self) -> dict:
         """Provide storage-related settings for the agent (runtime context)."""

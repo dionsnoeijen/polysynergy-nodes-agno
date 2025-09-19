@@ -9,9 +9,9 @@ def find_connected_prompt(node: Node) -> Optional[Dict[str, Any]]:
     Find connected prompt node and extract session/user data.
     
     Returns prompt data that overrides agent's manual settings:
-    - user_id: from prompt.active_user
-    - session_id: from prompt.active_session  
-    - session_name: from prompt.session[active_session] (dict value)
+    - user_id: from prompt node's active_user property
+    - session_id: from prompt node's active_session property  
+    - session_name: from prompt node's session dict[active_session]
     
     Returns None if no prompt connected or data incomplete.
     """
@@ -29,24 +29,27 @@ def find_connected_prompt(node: Node) -> Optional[Dict[str, Any]]:
 
 
 def _extract_prompt_data(prompt_node: Node) -> Optional[Dict[str, Any]]:
-    """Extract session/user data from prompt node variables."""
+    """Extract session/user data from prompt node properties."""
     
-    def get_variable_value(handle: str):
-        """Get value of variable by handle."""
-        var = next((v for v in prompt_node.variables if v.handle == handle), None)
-        return var.value if var else None
+    # Get required data from prompt node properties directly
+    active_user = getattr(prompt_node, 'active_user', None)
+    active_session = getattr(prompt_node, 'active_session', None)
+    session_dict = getattr(prompt_node, 'session', {}) or {}
     
-    # Get required data from prompt node
-    active_user = get_variable_value('active_user')
-    active_session = get_variable_value('active_session')
-    session_dict = get_variable_value('session') or {}
-    
-    # Must have both active user and session to override
-    if not active_user or not active_session:
+    # Session is optional but if we have no data at all, return None
+    if not active_user and not active_session:
         return None
     
     # Extract session name from session dict
-    session_name = session_dict.get(active_session) if isinstance(session_dict, dict) else None
+    # session_dict could be a dict or a list of NodeVariable-like objects
+    session_name = None
+    if isinstance(session_dict, dict):
+        session_name = session_dict.get(active_session)
+    elif isinstance(session_dict, list):
+        # Handle case where session is a list of objects with handle/value
+        session_item = next((item for item in session_dict if getattr(item, 'handle', None) == active_session), None)
+        if session_item:
+            session_name = getattr(session_item, 'value', None)
     
     return {
         'user_id': active_user,

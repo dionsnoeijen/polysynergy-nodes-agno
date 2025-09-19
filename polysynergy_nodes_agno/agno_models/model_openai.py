@@ -183,7 +183,7 @@ class ModelOpenAi(ServiceNode):
         self.instance = OpenAIChat(
             api_key=self.api_key,
             organization=self.organization,
-            base_url=self.base_url,
+            base_url=self.base_url if self.base_url else None,
             timeout=self.timeout,
             max_retries=self.max_retries,
             id=self.model,

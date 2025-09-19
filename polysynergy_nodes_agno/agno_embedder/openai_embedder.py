@@ -1,5 +1,5 @@
-from agno.embedder.base import Embedder
-from agno.embedder.openai import OpenAIEmbedder
+from agno.knowledge.embedder import Embedder
+from agno.knowledge.embedder.openai import OpenAIEmbedder
 from polysynergy_node_runner.setup_context.dock_property import dock_property
 from polysynergy_node_runner.setup_context.node_decorator import node
 from polysynergy_node_runner.setup_context.node_variable_settings import NodeVariableSettings
@@ -89,7 +89,7 @@ class OpenAIEmbedderNode(ServiceNode):
             dimensions=self.dimensions,
             api_key=self.api_key,
             organization=self.organization,
-            base_url=self.base_url,
+            base_url=self.base_url if self.base_url else None,
             encoding_format=self.encoding_format,  # type: ignore
             user=self.user,
         )

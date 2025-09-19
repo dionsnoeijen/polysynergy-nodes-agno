@@ -83,11 +83,14 @@ class DuckDuckGoTool(ServiceNode):
         info="Verify SSL certificates (maps to DDGS(verify=...)).",
     )
 
+    # Set by tool calling mechanism
+    output: str | None = None
+
     async def provide_instance(self) -> Toolkit:
         # Direct conform de huidige DuckDuckGoTools signature
         return DuckDuckGoTools(
-            search=self.search,
-            news=self.news,
+            enable_search=self.search,
+            enable_news=self.news,
             modifier=self.modifier,
             fixed_max_results=self.fixed_max_results,
             proxy=self.proxy,

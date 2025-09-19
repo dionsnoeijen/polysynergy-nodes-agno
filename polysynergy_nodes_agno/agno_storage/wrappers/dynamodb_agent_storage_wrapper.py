@@ -14,6 +14,8 @@ class DeltaStorageWrapper(Storage):
     Persist only the DELTA per run across the entire memory:
     for every run, keep only the newest user + newest assistant message.
     This prevents expanded-history duplication inside each run.
+    
+    Works with both AgentSession and TeamSession objects.
     """
 
     def __init__(self, inner: Storage, verbose: bool = True):
@@ -34,7 +36,15 @@ class DeltaStorageWrapper(Storage):
         return _maybe_await(self.inner.drop, *args, **kwargs)
 
     def read(self, session_id: str, user_id: Optional[str] = None, *args, **kwargs) -> Any:
-        return _maybe_await(self.inner.read, session_id, user_id, *args, **kwargs)
+        # Pass through the read request - the inner storage should return the correct session type
+        # The DynamoDbStorage should know whether to return AgentSession or TeamSession based on stored data
+        result = _maybe_await(self.inner.read, session_id, user_id, *args, **kwargs)
+        
+        if self.verbose and result:
+            session_type = self._get_session_type(result)
+            print(f"[DeltaStorageWrapper] read {session_type} session {session_id}")
+        
+        return result
 
     def upsert(self, session: Any, *args, **kwargs) -> None:
         self._prune_all_runs(session)
@@ -69,6 +79,22 @@ class DeltaStorageWrapper(Storage):
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.inner, name)
+
+    def _get_session_type(self, session: Any) -> str:
+        """Detect if this is an AgentSession or TeamSession."""
+        # Check for distinctive attributes
+        if hasattr(session, 'agent_data') or (isinstance(session, dict) and 'agent_data' in session):
+            return 'agent'
+        elif hasattr(session, 'team_data') or (isinstance(session, dict) and 'team_data' in session):
+            return 'team'
+        # Fallback: check class name if available
+        class_name = session.__class__.__name__ if hasattr(session, '__class__') else ''
+        if 'Team' in class_name:
+            return 'team'
+        elif 'Agent' in class_name:
+            return 'agent'
+        # Default to agent for backward compatibility
+        return 'agent'
 
     def _prune_all_runs(self, session: Any) -> None:
         # helpers
@@ -138,4 +164,5 @@ class DeltaStorageWrapper(Storage):
         if self.verbose:
             total_after = sum(len(_get(r, "messages") or []) for r in runs)
             sid = _get(session, "id") or _get(session, "session_id")
-            print(f"[DeltaStorageWrapper] pruned session {sid}: messages {total_before} → {total_after}")
+            session_type = self._get_session_type(session)
+            print(f"[DeltaStorageWrapper] pruned {session_type} session {sid}: messages {total_before} → {total_after}")

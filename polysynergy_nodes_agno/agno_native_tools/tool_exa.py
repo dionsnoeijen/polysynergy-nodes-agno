@@ -173,6 +173,9 @@ class ExaTool(ServiceNode):
         info="Maximum time in seconds to wait for API responses.",
     )
 
+    # Set by tool calling mechanism
+    output: str | None = None
+
     async def provide_instance(self) -> Toolkit:
         return ExaTools(
             text=self.text,

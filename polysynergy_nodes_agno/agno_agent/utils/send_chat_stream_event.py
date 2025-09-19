@@ -65,7 +65,16 @@ def get_redis():
         )
     return _redis
 
-def send_chat_stream_event(flow_id: str, run_id: str, node_id: str, event):
+def send_chat_stream_event(
+    flow_id: str, 
+    run_id: str, 
+    node_id: str, 
+    event, 
+    agent_role: str = "single",
+    is_member_agent: bool = False, 
+    parent_team_id: str = None,
+    member_index: int = None
+):
     channel = f"chat_stream:{flow_id}"
     
     # Get next sequence number for this run (thread-safe)
@@ -75,30 +84,35 @@ def send_chat_stream_event(flow_id: str, run_id: str, node_id: str, event):
         _sequence_counters[run_id] += 1
         sequence_id = _sequence_counters[run_id]
 
-    def fire():
-        try:
-            redis_conn = get_redis()
-            if isinstance(event, dict):
-                payload = event
-            elif hasattr(event, "__dataclass_fields__"):
-                payload = asdict(event)
-            else:
-                raise TypeError(f"Cannot serialize event: {type(event)}")
+    try:
+        redis_conn = get_redis()
+        if isinstance(event, dict):
+            payload = event
+        elif hasattr(event, "__dataclass_fields__"):
+            payload = asdict(event)
+        else:
+            raise TypeError(f"Cannot serialize event: {type(event)}")
 
-            # Add ordering metadata
-            payload['run_id'] = run_id
-            payload['node_id'] = node_id
-            payload['sequence_id'] = sequence_id
-            payload['microtime'] = time.time()  # Precise timestamp
-            payload['message_id'] = f"msg_{run_id}_{sequence_id}"
-            
-            logger.debug(f"Sending chat stream event {sequence_id} for run {run_id}")
+        # Add ordering metadata
+        payload['run_id'] = run_id
+        payload['node_id'] = node_id
+        payload['sequence_id'] = sequence_id
+        payload['microtime'] = time.time()  # Precise timestamp
+        payload['message_id'] = f"msg_{run_id}_{sequence_id}"
+        
+        # Add member/main agent metadata for smart streaming
+        payload['agent_role'] = agent_role  # "single" | "leader" | "member"
+        payload['is_member_agent'] = is_member_agent
+        if parent_team_id:
+            payload['parent_team_id'] = parent_team_id
+        if member_index is not None:
+            payload['member_index'] = member_index
+        
+        logger.debug(f"Sending chat stream event {sequence_id} for run {run_id}")
 
-            redis_conn.publish(channel, json.dumps(payload, cls=AgnoJSONEncoder))
-        except Exception as e:
-            logger.warning(f"[Redis] chat stream publish failed (ignored): {e}")
-
-    threading.Thread(target=fire).start()
+        redis_conn.publish(channel, json.dumps(payload, cls=AgnoJSONEncoder))
+    except Exception as e:
+        logger.warning(f"[Redis] chat stream publish failed (ignored): {e}")
 
 def cleanup_sequence_counter(run_id: str):
     """Clean up sequence counter for completed run to prevent memory leaks."""

@@ -93,6 +93,9 @@ class YFinanceTool(ServiceNode):
         info="Enable all tools.",
     )
 
+    # Set by tool calling mechanism
+    output: str | None = None
+
     async def provide_instance(self) -> Toolkit:
         return YFinanceTools(
             stock_price=self.stock_price,

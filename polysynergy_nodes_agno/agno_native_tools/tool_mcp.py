@@ -77,6 +77,9 @@ class MCPTool(ServiceNode):
         info="Automatically connect to MCP server when tool is initialized",
     )
 
+    # Set by tool calling mechanism
+    output: str | None = None
+
     async def provide_instance(self) -> Toolkit:
         # Configure MCP tools based on connection mode
         if self.connection_mode == "command" and self.command:

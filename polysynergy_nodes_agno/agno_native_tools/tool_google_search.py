@@ -83,6 +83,9 @@ class GoogleSearchTool(ServiceNode):
         info="Directory to store cache files.",
     )
 
+    # Set by tool calling mechanism
+    output: str | None = None
+
     async def provide_instance(self) -> Toolkit:
         return GoogleSearchTools(
             fixed_max_results=self.fixed_max_results,

@@ -1,9 +1,7 @@
-from typing import Optional
-
+from agno.knowledge.embedder import Embedder
+from agno.knowledge.reranker import Reranker
 from agno.vectordb.qdrant import Qdrant
 from agno.vectordb.base import VectorDb
-from agno.embedder.base import Embedder
-from agno.reranker.base import Reranker
 from agno.vectordb.search import SearchType
 from agno.vectordb.distance import Distance
 from polysynergy_node_runner.setup_context.dock_property import dock_property
@@ -170,6 +168,13 @@ class QdrantVectorDB(ServiceNode):
             }
             distance_enum = distance_map.get(self.distance)
         
+        # Debug logging before creating Qdrant instance
+        print(f"[QdrantVectorDB] Creating Qdrant instance with:")
+        print(f"  collection: {self.collection}")
+        print(f"  url: '{self.url}' (type: {type(self.url)})")
+        print(f"  api_key: {'***' if self.api_key else None} (type: {type(self.api_key)})")
+        print(f"  embedder: {type(embedder_to_use).__name__ if embedder_to_use else None}")
+
         # Create Qdrant instance with full configuration
         self.vector_db_instance = Qdrant(
             collection=self.collection,
