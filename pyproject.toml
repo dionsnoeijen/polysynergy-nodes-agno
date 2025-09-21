@@ -17,7 +17,6 @@ pycountry = "^24.6.1"
 ddgs = "^9"
 qdrant-client = "^1.15.1"
 python-docx = "^1.2.0"
-textract = "^1.6.5"
 bs4 = "^0.0.2"
 chonkie = "^1.2.1"
 psycopg = {extras = ["binary"], version = "^3.2.0"}
