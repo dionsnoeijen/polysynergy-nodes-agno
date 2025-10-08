@@ -1,5 +1,7 @@
+import os
 from typing import Any, Union, Sequence
 from agno.knowledge import Knowledge
+from agno.knowledge.chunking.strategy import ChunkingStrategy
 from agno.vectordb import VectorDb
 from polysynergy_node_runner.setup_context.dock_property import dock_dict
 from polysynergy_node_runner.setup_context.node import Node
@@ -26,16 +28,23 @@ class DocumentKnowledge(Node):
         type="agno.vectordb.base.VectorDb",
     )
 
-    urls: list[Union[str, dict[str, Any]]] = NodeVariableSettings(
-        label="Document URLs/Paths",
+    chunking_strategy: ChunkingStrategy | None = NodeVariableSettings(
+        label="Chunking Strategy",
+        has_in=True,
+        info="Chunking strategy for splitting documents into chunks for vector storage.",
+        type="agno.knowledge.chunking.strategy.ChunkingStrategy",
+    )
+
+    urls_or_paths: list = NodeVariableSettings(
+        label="URLs or File Paths",
         has_in=True,
         dock=dock_dict(
             key_label="URL/Path",
             value_label="Metadata",
-            info="List of document URLs (http/https) or S3 keys (path/to/file.pdf) with optional metadata."
+            info="List of URLs (http/https), S3 keys, or local file paths (/tmp/file.pdf) with optional metadata."
         ),
         default=[],
-        info="Mixed document URLs or S3 paths with optional metadata.",
+        info="Mixed URLs, S3 keys, or local file paths with optional metadata.",
     )
 
     allowed_extensions: list[str] | None = NodeVariableSettings(
@@ -62,26 +71,56 @@ class DocumentKnowledge(Node):
         return Knowledge(vector_db=vector_db)
 
     async def execute(self):
-        """Load documents into the knowledge base."""
+        """Load documents into the knowledge base with configurable chunking strategy."""
         try:
-
-            # Download documents to temp directory
-            print(f"Processing {len(self.urls)} URLs...")
             exts: Sequence[str] = self.allowed_extensions or [".pdf", ".docx"]
-            print(f"Enriching metadata for URLs with extensions: {exts}")
-            url_items = enrich_metadata(self.urls or [], extensions=exts)
-            print(f"Downloading {len(url_items)} items to temp directory...")
-            path_items = download_mixed_items_to_tmp(url_items, extensions=exts)
-            print(f"Downloaded {len(path_items)} files successfully")
+
+            # Process all URLs or paths - let the system detect what to do
+            enriched_items = enrich_metadata(self.urls_or_paths or [], extensions=exts)
+
+            # Separate URLs/S3 keys from local file paths
+            url_items = []
+            local_path_items = []
+
+            for item in enriched_items:
+                path_or_url = item.get("url")  # enrich_metadata uses "url" key
+                metadata = item.get("metadata", {})
+
+                if path_or_url:
+                    # Check if it's a URL or local path
+                    if path_or_url.startswith(('http://', 'https://')):
+                        # It's a URL - needs downloading
+                        url_items.append(item)
+                    elif os.path.exists(path_or_url):
+                        # It's an existing local file path
+                        local_path_items.append({"path": path_or_url, "metadata": metadata})
+                    else:
+                        # Assume it's S3 key or URL - let download function handle it
+                        url_items.append(item)
+
+            # Download URLs and S3 keys to tmp
+            downloaded_items = download_mixed_items_to_tmp(url_items, extensions=exts) if url_items else []
+
+            # Combine downloaded and existing local files
+            path_items = downloaded_items + local_path_items
 
             if not path_items:
-                self.false_path = "No valid documents found after processing URLs."
+                self.false_path = "No valid documents found after processing URLs and tmp paths."
                 return
 
-            # Get the knowledge instance once
+            # Get the knowledge instance and chunking strategy
             knowledge_base = await self.knowledge_instance()
+            chunker = await find_connected_service(self, "chunking_strategy", ChunkingStrategy)
 
-            # Add content for each downloaded file using async API
+            if not chunker:
+                # Fallback to simple default chunking
+                from agno.knowledge.chunking.fixed import FixedSizeChunking
+                chunker = FixedSizeChunking(chunk_size=1000, overlap=100)
+                print("No chunking strategy connected, using default FixedSizeChunking (1000 chars, 100 overlap)")
+            else:
+                print(f"Using connected chunking strategy: {chunker.__class__.__name__}")
+
+            # Add content for each downloaded file using async API with custom chunking
             processed_count = 0
             failed_count = 0
 
@@ -89,12 +128,14 @@ class DocumentKnowledge(Node):
                 try:
                     # Get metadata for this specific document
                     item_metadata = path_item.get("metadata", {})
+                    item_metadata["chunking_strategy"] = chunker.__class__.__name__
 
-                    # Use add_content_async with metadata per document
-                    await knowledge_base.add_content_async(
+                    # Use add_content_async with custom reader that uses our chunking strategy
+                    await self._add_content_with_chunking(
+                        knowledge_base=knowledge_base,
                         path=path_item["path"],
-                        metadata=item_metadata,  # Enriched metadata per document
-                        # Reader will be determined automatically by file extension
+                        metadata=item_metadata,
+                        chunker=chunker
                     )
                     processed_count += 1
                 except Exception as e:
@@ -116,3 +157,80 @@ class DocumentKnowledge(Node):
             print(f"Document processing error - Full trace:\n{error_trace}")
             self.false_path = f"Error during document processing: {str(e)}"
             raise
+
+    async def _add_content_with_chunking(self, knowledge_base, path, metadata, chunker):
+        """Add content to knowledge base with custom chunking strategy."""
+        from agno.knowledge.reader import ReaderFactory
+        from agno.knowledge.content import Content
+        from pathlib import Path
+        from uuid import uuid4
+
+        # Create a Content object without automatic chunking
+        content_id = str(uuid4())
+        content = Content(
+            id=content_id,
+            path=path,
+            metadata=metadata
+        )
+
+        # Get appropriate reader for the file type
+        file_path = Path(path)
+        reader = ReaderFactory.get_reader_for_extension(file_path.suffix)
+
+        if not reader:
+            raise ValueError(f"No reader available for file type: {file_path.suffix}")
+
+        # Read the document without chunking (run in thread pool to avoid blocking)
+        import asyncio
+        reader.chunk = False  # Disable automatic chunking
+        documents = await asyncio.to_thread(reader.read, file_path, name=file_path.name)
+
+        if not documents:
+            raise ValueError(f"No content could be read from: {path}")
+
+        # Apply custom chunking strategy
+        print(f"Applying {chunker.__class__.__name__} to {len(documents)} documents")
+
+        chunked_documents = []
+
+        # Check what chunking method is available
+        if hasattr(chunker, 'chunk_documents_async'):
+            # Async method for multiple documents
+            chunked_documents = await chunker.chunk_documents_async(documents)
+        elif hasattr(chunker, 'chunk_documents'):
+            # Sync method for multiple documents - run in thread pool
+            chunked_documents = await asyncio.to_thread(chunker.chunk_documents, documents)
+        elif hasattr(chunker, 'chunk'):
+            # Single document chunking method - run in thread pool
+            def chunk_all_documents():
+                all_chunks = []
+                for doc in documents:
+                    chunks = chunker.chunk(doc)
+                    all_chunks.extend(chunks)
+                return all_chunks
+
+            chunked_documents = await asyncio.to_thread(chunk_all_documents)
+        else:
+            # Fallback: no chunking, use original documents
+            print(f"Warning: No chunking method found, using original documents")
+            chunked_documents = documents
+
+        print(f"Created {len(chunked_documents)} chunks")
+
+        # Set content_id for all chunks
+        for doc in chunked_documents:
+            doc.content_id = content_id
+            if metadata:
+                doc.meta_data.update(metadata)
+
+        # Add to vector database directly
+        if knowledge_base.vector_db:
+            content_hash = knowledge_base._build_content_hash(content)
+            await knowledge_base.vector_db.async_insert(
+                content_hash=content_hash,
+                documents=chunked_documents,
+                filters=metadata
+            )
+            print(f"Successfully inserted {len(chunked_documents)} chunks to vector database")
+        else:
+            raise ValueError("No vector database available in knowledge base")

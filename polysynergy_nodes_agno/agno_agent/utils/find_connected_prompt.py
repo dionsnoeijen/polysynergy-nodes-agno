@@ -29,17 +29,18 @@ def find_connected_prompt(node: Node) -> Optional[Dict[str, Any]]:
 
 
 def _extract_prompt_data(prompt_node: Node) -> Optional[Dict[str, Any]]:
-    """Extract session/user data from prompt node properties."""
-    
+    """Extract session/user data and files from prompt node properties."""
+
     # Get required data from prompt node properties directly
     active_user = getattr(prompt_node, 'active_user', None)
     active_session = getattr(prompt_node, 'active_session', None)
     session_dict = getattr(prompt_node, 'session', {}) or {}
-    
+    files = getattr(prompt_node, 'files', []) or []
+
     # Session is optional but if we have no data at all, return None
     if not active_user and not active_session:
         return None
-    
+
     # Extract session name from session dict
     # session_dict could be a dict or a list of NodeVariable-like objects
     session_name = None
@@ -50,10 +51,11 @@ def _extract_prompt_data(prompt_node: Node) -> Optional[Dict[str, Any]]:
         session_item = next((item for item in session_dict if getattr(item, 'handle', None) == active_session), None)
         if session_item:
             session_name = getattr(session_item, 'value', None)
-    
+
     return {
         'user_id': active_user,
         'session_id': active_session,
         'session_name': session_name,
+        'files': files if isinstance(files, list) else [],
         'prompt_node_id': prompt_node.id
     }

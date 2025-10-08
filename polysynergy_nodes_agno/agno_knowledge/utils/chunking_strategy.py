@@ -1,12 +1,11 @@
 from __future__ import annotations
 from typing import Literal, Optional
 
-from agno.document.chunking.fixed import FixedSizeChunking
-from agno.document.chunking.recursive import RecursiveChunking
-from agno.document.chunking.agentic import AgenticChunking
-from agno.document.chunking.semantic import SemanticChunking
-from agno.document.chunking.document import DocumentChunking
-from agno.document.chunking.strategy import ChunkingStrategy
+from agno.knowledge.chunking.document import DocumentChunking
+from agno.knowledge.chunking.fixed import FixedSizeChunking
+from agno.knowledge.chunking.recursive import RecursiveChunking
+from agno.knowledge.chunking.semantic import SemanticChunking
+from agno.knowledge.chunking.strategy import ChunkingStrategy
 
 ChunkingName = Literal["fixed", "recursive", "agentic", "semantic", "document"]
 

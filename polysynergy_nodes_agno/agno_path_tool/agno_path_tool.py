@@ -23,11 +23,19 @@ class AgnoPathTool(Node):
     name: str = NodeVariableSettings(
         label="Name",
         dock=True,
+        info="Display name for the tool (can contain spaces)"
+    )
+
+    function_name: str = NodeVariableSettings(
+        label="Function Name",
+        dock=True,
+        info="Valid function identifier for LLM (letters, numbers, underscores only). Example: process_receipt"
     )
 
     description: str = NodeVariableSettings(
         label="Description",
         dock=True,
+        info="Description of what this tool does and when to use it"
     )
 
     strict: bool | None = NodeVariableSettings(

@@ -15,7 +15,7 @@ class AgentSettingsResponseModel(ServiceNode):
 
     # Settings that can be used by the agent on runtime.
     settings: list = [
-        'response_model',
+        'output_schema',
         'parser_model',
         'parser_model_prompt',
         'parse_response',
@@ -24,8 +24,15 @@ class AgentSettingsResponseModel(ServiceNode):
         'save_response_to_file',
     ]
 
+    output_schema: BaseModel | None = NodeVariableSettings(
+        dock=True,
+        has_in=True,
+        info="Pydantic model defining the structured output schema"
+    )
+
     response_model: BaseModel | None = NodeVariableSettings(
         dock=True,
+        has_in=True,
         info="Pydantic model used to parse the agent response."
     )
 
@@ -69,4 +76,24 @@ class AgentSettingsResponseModel(ServiceNode):
     )
 
     async def provide_instance(self) -> "AgentSettingsResponseModel":
+        # Check if output_schema is connected from another node
+        schema_connections = [
+            c for c in self.get_in_connections()
+            if c.target_handle == "output_schema"
+        ]
+
+        print(f"DEBUG AgentSettingsResponseModel: Found {len(schema_connections)} output_schema connections")
+
+        if schema_connections:
+            conn = schema_connections[0]
+            source_node = self.state.get_node_by_id(conn.source_node_id)
+            print(f"DEBUG AgentSettingsResponseModel: Source node = {source_node.handle if source_node else None}")
+
+            if source_node and hasattr(source_node, "provide_instance"):
+                # Get the model from the connected node
+                model = await source_node.provide_instance()
+                self.output_schema = model
+                print(f"DEBUG AgentSettingsResponseModel: Loaded output_schema from connected node: {model}")
+
+        print(f"DEBUG AgentSettingsResponseModel: Final output_schema = {self.output_schema}")
         return self

@@ -6,6 +6,7 @@ from agno.agent import Agent
 from agno.db import BaseDb
 from agno.models.base import Model
 from agno.team import Team
+from agno.media import Image, Audio, Video
 
 from polysynergy_node_runner.setup_context.dock_property import dock_text_area, dock_property, dock_dict
 from polysynergy_node_runner.setup_context.node_decorator import node
@@ -25,6 +26,7 @@ from polysynergy_nodes_agno.agno_agent.utils.find_connected_prompt import find_c
 from polysynergy_nodes_agno.agno_agent.utils.send_chat_stream_event import send_chat_stream_event
 from polysynergy_nodes_agno.agno_agent.utils.create_tool_hook import create_tool_hook
 from polysynergy_nodes_agno.agno_agent.utils.build_tool_mapping import build_tool_mapping
+from polysynergy_nodes_agno.agno_agent.utils.generate_presigned_urls import generate_presigned_urls_for_files
 
 
 @node(
@@ -83,6 +85,13 @@ class AgnoAgent(ServiceNode):
         dock=True,
         has_in=True,
         info="The prompt or task description for the agent to execute."
+    )
+
+    files: list | None = NodeVariableSettings(
+        label="Files",
+        dock=True,
+        has_in=True,
+        info="List of file URLs/paths for the agent to process (images, audio, video, documents)."
     )
 
     agent_name: str | None = NodeVariableSettings(
@@ -306,6 +315,10 @@ class AgnoAgent(ServiceNode):
 
     async def _setup(self):
         model = await find_connected_service(self, "model", Model)
+
+        if not model:
+            raise ValueError("No model connected. Please connect a Model node.")
+
         db = await find_connected_service(self, "db", BaseDb)
         storage_settings = find_connected_db_settings(self)
 
@@ -330,10 +343,14 @@ class AgnoAgent(ServiceNode):
 
         props = extract_props_from_settings(settings)
         props.update(storage_settings)
-        
+
         # Debug logging
         print(f"DB settings: {storage_settings}")
         print(f"enable_user_memories in props: {props.get('enable_user_memories', 'NOT FOUND')}")
+        print(f"DEBUG: response_model in props: {props.get('response_model', 'NOT FOUND')}")
+        if 'response_model' in props:
+            print(f"DEBUG: response_model type: {type(props['response_model'])}")
+            print(f"DEBUG: response_model value: {props['response_model']}")
 
         # Build tool instances and mapping using utility
         tool_instances, function_name_to_node_id = await build_tool_mapping(tool_info_list, path_tools)
@@ -346,14 +363,16 @@ class AgnoAgent(ServiceNode):
         final_user_id = self.user_id
         final_session_id = self.session_id
         final_session_name = self.session_name
-        
+        final_files = self.files or []
+
         if prompt_data:
             final_user_id = prompt_data['user_id']
-            final_session_id = prompt_data['session_id'] 
+            final_session_id = prompt_data['session_id']
             final_session_name = prompt_data['session_name']
-            print(f'PROMPT OVERRIDE: user_id={final_user_id}, session_id={final_session_id}, session_name={final_session_name}')
+            final_files = prompt_data.get('files', []) or []
+            print(f'PROMPT OVERRIDE: user_id={final_user_id}, session_id={final_session_id}, session_name={final_session_name}, files={len(final_files)} items')
         else:
-            print(f'MANUAL SETTINGS: user_id={final_user_id}, session_id={final_session_id}, session_name={final_session_name}')
+            print(f'MANUAL SETTINGS: user_id={final_user_id}, session_id={final_session_id}, session_name={final_session_name}, files={len(final_files)} items')
             
         # Generate defaults if needed for DB history to work
         if db and not final_session_id:
@@ -397,28 +416,87 @@ class AgnoAgent(ServiceNode):
         return self.instance
 
     async def execute(self):
-        
+
         # if this is part of a team, or a sub for another agent
         # that team or agent will handle the execution
         if has_connected_agent_or_team(self):
             print("Agent is connected to team/agent - skipping execution")
             return
 
+        # Get files from prompt data BEFORE creating agent
+        prompt_data = find_connected_prompt(self)
+        print(f"DEBUG: prompt_data = {prompt_data}")
+        agent_files = []
+        if prompt_data:
+            agent_files = prompt_data.get('files', []) or []
+            print(f"DEBUG: Got {len(agent_files)} files from prompt_data: {agent_files}")
+        else:
+            agent_files = self.files or []
+            print(f"DEBUG: Got {len(agent_files)} files from self.files: {agent_files}")
+
+        # Enhance instructions with file context if files are available
+        if agent_files:
+            file_list = "\n".join([f"- {path}" for path in agent_files])
+            files_context = f"""
+
+Available files in this session:
+{file_list}
+
+IMPORTANT: When calling tools with file parameters, you MUST use the exact file paths listed above.
+Do NOT invent or simplify filenames. Use the complete path as shown.
+"""
+            original_instructions = self.instructions or ""
+            self.instructions = original_instructions + files_context
+            print(f"Enhanced agent instructions with {len(agent_files)} file paths")
+
         await self._create_agent()
-        
+
         if not self.prompt:
             print("No prompt provided")
             self.false_path = "No prompt provided for agent execution"
             return
 
         print(f"About to run agent with prompt: {self.prompt[:100]}...")
-        
+        if agent_files:
+            print(f"Agent will process {len(agent_files)} files: {agent_files}")
+
+        # Convert relative file paths to presigned URLs
+        agent_file_urls = generate_presigned_urls_for_files(agent_files) if agent_files else []
+        print(f"DEBUG: Generated {len(agent_file_urls)} presigned URLs: {agent_file_urls}")
+
+        # Parse files by type for native agno v2 support
+        images = []
+        audio = []
+        videos = []
+        files = []
+
+        for i, file_path in enumerate(agent_files):
+            file_url = agent_file_urls[i] if i < len(agent_file_urls) else file_path
+            file_path_lower = file_path.lower()
+
+            if any(file_path_lower.endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']):
+                print(f"DEBUG: Adding image {i}: path={file_path}, url={file_url}")
+                images.append(Image(url=file_url))
+            elif any(file_path_lower.endswith(ext) for ext in ['.mp3', '.wav', '.m4a', '.flac', '.aac']):
+                audio.append(Audio(url=file_url))
+            elif any(file_path_lower.endswith(ext) for ext in ['.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm']):
+                videos.append(Video(url=file_url))
+            else:
+                files.append(file_url)
+
+        print(f"Files categorized - images: {len(images)}, audio: {len(audio)}, videos: {len(videos)}, files: {len(files)}")
+        print(f"DEBUG: About to call arun with images={[str(img.url) for img in images]}")
+
         try:
-            # In Agno v2, arun returns AsyncIterator[RunOutputEvent] when stream=True
+            # In Agno v2, arun supports native file parameters
             stream = self.instance.arun(
                 self.prompt,
                 stream=True,
-                stream_intermediate_steps=True
+                stream_intermediate_steps=True,
+                images=images if images else None,
+                audio=audio if audio else None,
+                videos=videos if videos else None,
+                files=files if files else None
             )
 
             async def _collect_response(event_stream):
@@ -467,7 +545,13 @@ class AgnoAgent(ServiceNode):
 
             # Extract content from the final response
             if hasattr(response, 'content'):
-                self.true_path = response.content
+                content = response.content
+                # If content is a Pydantic model, convert to dict/JSON
+                if hasattr(content, 'model_dump'):
+                    self.true_path = content.model_dump()
+                    print(f"Converted Pydantic model to dict: {self.true_path}")
+                else:
+                    self.true_path = content
             else:
                 print(f"Response has no content attribute, using str: {str(response)}")
                 self.true_path = str(response)

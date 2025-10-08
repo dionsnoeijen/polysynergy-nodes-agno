@@ -17,7 +17,17 @@ def find_nodes_for_tool(start_node):
 
 
 def create_tool_and_invoke(node: Node, tool_node, agent=None) -> Function:
-    handle = tool_node.name or tool_node.handle or "unnamed_tool"
+    # Use function_name if provided, otherwise fall back to handle
+    function_name = getattr(tool_node, 'function_name', None) or tool_node.handle or "unnamed_tool"
+
+    # Validate function_name matches OpenAI pattern
+    import re
+    if not re.match(r'^[a-zA-Z0-9_-]+$', function_name):
+        print(f"WARNING: function_name '{function_name}' contains invalid characters. Using sanitized version.")
+        function_name = re.sub(r'[^a-zA-Z0-9_-]', '_', function_name)
+        if function_name and function_name[0].isdigit():
+            function_name = f"tool_{function_name}"
+
     description = tool_node.description or tool_node.instructions or "No description."
     parameters = tool_node.parameters or {}
 
@@ -36,18 +46,21 @@ def create_tool_and_invoke(node: Node, tool_node, agent=None) -> Function:
 
     # Create the entrypoint function that will execute the flow
     async def flow_entrypoint(**kwargs):
-        print(f'INVOKING AGNO TOOL: {handle}', kwargs)
+        print(f'INVOKING AGNO TOOL: {function_name}', kwargs)
         
         try:
             start_node = node.state.get_node_by_id(tool_node.id)
-            
-            # Set arguments from function call
+
+            # Set arguments from function call into parameters dict
             for arg_name, value in kwargs.items():
-                if hasattr(start_node, 'parameters') and arg_name in start_node.parameters:
-                    # Set the parameter value on the start node
+                if hasattr(start_node, 'parameters') and isinstance(start_node.parameters, dict):
+                    # Update the parameters dict with runtime value
+                    start_node.parameters[arg_name] = value
+                    print(f"Updated parameters['{arg_name}'] = {value}")
+                else:
+                    # Fallback: set as attribute if parameters dict doesn't exist
                     setattr(start_node, arg_name, value)
-                elif hasattr(start_node, arg_name):
-                    setattr(start_node, arg_name, value)
+                    print(f"Set {arg_name} = {value} as attribute")
             
             # Find the nodes in the tool subflow
             nodes_for_tool, end_node = find_nodes_for_tool(start_node)
@@ -80,44 +93,77 @@ def create_tool_and_invoke(node: Node, tool_node, agent=None) -> Function:
             
             # Return the result from the end node
             return str(getattr(end_node, 'result', 'No result'))
-            
+
         except Exception as e:
-            print(f"[Error invoking agno tool {handle}]: {str(e)}")
-            return f"[Error executing tool {handle}]: {str(e)}"
+            print(f"[Error invoking agno tool {function_name}]: {str(e)}")
+            return f"[Error executing tool {function_name}]: {str(e)}"
 
     # Create the Agno Function
-    function = Function(
-        name=handle,
-        description=description,
-        parameters=schema,
-        entrypoint=flow_entrypoint,
-        strict=getattr(tool_node, 'strict', None),
-        instructions=getattr(tool_node, 'instructions', None),
-        add_instructions=getattr(tool_node, 'add_instructions', True),
-        show_result=getattr(tool_node, 'show_result', None),
-        stop_after_tool_call=getattr(tool_node, 'stop_after_tool_call', None),
-        requires_confirmation=getattr(tool_node, 'requires_confirmation', None),
-        requires_user_input=getattr(tool_node, 'requires_user_input', None),
-        external_execution=getattr(tool_node, 'external_execution', None),
-    )
+    # Only include optional parameters if they have non-None values
+    function_kwargs = {
+        'name': function_name,
+        'description': description,
+        'parameters': schema,
+        'entrypoint': flow_entrypoint,
+    }
+
+    # Add optional boolean parameters only if they exist and are not None
+    optional_bool_attrs = ['strict', 'show_result', 'stop_after_tool_call',
+                           'requires_confirmation', 'requires_user_input', 'external_execution']
+    for attr in optional_bool_attrs:
+        value = getattr(tool_node, attr, None)
+        if value is not None:
+            function_kwargs[attr] = value
+
+    # Add optional parameters
+    instructions = getattr(tool_node, 'instructions', None)
+    if instructions is not None:
+        function_kwargs['instructions'] = instructions
+
+    add_instructions = getattr(tool_node, 'add_instructions', None)
+    if add_instructions is not None:
+        function_kwargs['add_instructions'] = add_instructions
+
+    function = Function(**function_kwargs)
     
     return function
 
 
 def find_connected_path_tools(node: Node) -> list:
+    print(f"\n=== FINDING PATH TOOLS for node {node.id} ===")
+
+    all_out_connections = node.get_out_connections()
+    print(f"Total outgoing connections: {len(all_out_connections)}")
+
+    for conn in all_out_connections:
+        print(f"  Connection: source_handle='{conn.source_handle}', target_node={conn.target_node_id}")
+
     tool_connections = [
-        c for c in node.get_out_connections()
+        c for c in all_out_connections
         if c.source_handle == "path_tools"
     ]
+    print(f"Path tool connections found: {len(tool_connections)}")
+
     tools: list[Function] = []
 
     for connection in tool_connections:
         tool_node = node.state.get_node_by_id(connection.target_node_id)
+        tool_node_type = type(tool_node).__name__
 
-        if not type(tool_node).__name__.lower().startswith("agnoflowtool"):
+        print(f"\n  Processing tool node: {tool_node.id}")
+        print(f"    Type: {tool_node_type}")
+        print(f"    Handle: {getattr(tool_node, 'handle', 'NO HANDLE')}")
+        print(f"    Name: {getattr(tool_node, 'name', 'NO NAME')}")
+        print(f"    Starts with 'agnopathtool': {tool_node_type.lower().startswith('agnopathtool')}")
+
+        if not tool_node_type.lower().startswith("agnopathtool"):
+            print(f"    ❌ SKIPPED: Type doesn't start with 'agnopathtool'")
             continue
 
+        print(f"    ✅ Creating tool...")
         tool = create_tool_and_invoke(node, tool_node)
         tools.append(tool)
+        print(f"    ✅ Tool created: {tool.name}")
 
+    print(f"\n=== TOTAL PATH TOOLS CREATED: {len(tools)} ===\n")
     return tools
