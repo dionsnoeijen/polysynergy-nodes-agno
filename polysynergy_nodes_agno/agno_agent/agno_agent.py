@@ -353,10 +353,10 @@ class AgnoAgent(ServiceNode):
             print(f"DEBUG: response_model value: {props['response_model']}")
 
         # Build tool instances and mapping using utility
-        tool_instances, function_name_to_node_id = await build_tool_mapping(tool_info_list, path_tools)
+        tool_instances, function_name_to_node_id, mcp_toolkits = await build_tool_mapping(tool_info_list, path_tools)
 
         # Create tool hook using utility
-        tool_hook = create_tool_hook(self.context, function_name_to_node_id)
+        tool_hook = create_tool_hook(self.context, function_name_to_node_id, mcp_toolkits)
 
         # Check for connected prompt node - prompt overrides manual settings
         prompt_data = find_connected_prompt(self)

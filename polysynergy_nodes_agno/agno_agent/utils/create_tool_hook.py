@@ -10,7 +10,7 @@ def is_valid_uuid(value: str) -> bool:
     return bool(uuid_pattern.match(value))
 
 
-def create_tool_hook(context, function_name_to_node_id: Dict[str, str]):
+def create_tool_hook(context, function_name_to_node_id: Dict[str, str], mcp_toolkits: list = None):
     """
     Creates a tool hook function for Agno agents that handles tool execution
     with proper event emission and result storage.
@@ -23,9 +23,31 @@ def create_tool_hook(context, function_name_to_node_id: Dict[str, str]):
         Async function that can be used as a tool hook in Agno agents
     """
     async def tool_hook(function_name: str, function_call: Callable, arguments: dict):
+        # DEBUG: Print wat we hebben
+        print(f"\n🔧 TOOL HOOK CALLED: {function_name}")
+        print(f"   Context id: {id(context)}")
+        print(f"   Execution flow id: {id(context.execution_flow)}")
+        print(f"   Run ID: {context.run_id}")
+        print(f"   function_name_to_node_id keys: {list(function_name_to_node_id.keys())}")
+        print(f"   Is in mapping: {function_name in function_name_to_node_id}")
+
         # Check if this is a mapped node tool or an internal Agno tool
         is_node_tool = function_name in function_name_to_node_id
         node_id = function_name_to_node_id.get(function_name, function_name)
+
+        # If not in static mapping, assume it's from an MCP toolkit (dynamic tools)
+        # MCP tools are loaded dynamically by Agno, so any unmapped tool likely comes from MCP
+        if not is_node_tool and mcp_toolkits:
+            print(f"   Tool not in static mapping, checking {len(mcp_toolkits)} MCP toolkit(s)...")
+            # For now, assume first MCP toolkit (we can make this smarter later)
+            if len(mcp_toolkits) > 0:
+                mcp_info = mcp_toolkits[0]  # Use first MCP toolkit
+                node_id = mcp_info["node_id"]
+                is_node_tool = True
+                print(f"   ⚡ Assuming MCP tool '{function_name}' belongs to node {node_id}")
+
+        print(f"   is_node_tool: {is_node_tool}")
+        print(f"   node_id: {node_id}")
 
         # Additional validation: Check if the node_id looks like a valid node
         # (has UUID format) and exists in the execution flow
@@ -33,22 +55,37 @@ def create_tool_hook(context, function_name_to_node_id: Dict[str, str]):
         node_order = None
 
         if is_node_tool:
+            print(f"   Checking execution_flow for node {node_id}")
+            print(f"   nodes_order: {[n.get('id', 'NO_ID') for n in context.execution_flow.get('nodes_order', [])]}")
             # Verify the node exists in the execution flow
             for node in context.execution_flow.get("nodes_order", []):
                 if node["id"] == node_id:
                     node_handle = node.get("handle", "")
                     node_order = node.get("order")
+                    print(f"   ✓ Found node in execution_flow: handle={node_handle}, order={node_order}")
                     # Only consider it valid if it has a proper handle
                     if node_handle:
                         is_valid_node = True
+                        print(f"   ✓ Node is VALID (has handle)")
                     else:
-                        print(f"Warning: Node {node_id} has no handle, skipping storage")
+                        print(f"   ✗ Warning: Node {node_id} has no handle, skipping storage")
                     break
+            else:
+                print(f"   ✗ Node {node_id} NOT found in execution_flow")
 
             # Double-check: node_id should be a UUID for real nodes
             if is_valid_node and not is_valid_uuid(node_id):
-                print(f"Warning: Node ID {node_id} doesn't look like a UUID")
+                print(f"   ✗ Warning: Node ID {node_id} doesn't look like a UUID")
                 is_valid_node = False
+
+        # SIMPLIFIED FIX: If it's a node tool with valid UUID, send events
+        # Don't check execution_flow because ServiceNodes may not be added yet
+        if is_node_tool and is_valid_uuid(node_id):
+            is_valid_node = True
+            print(f"   ✓ OVERRIDE: Valid node tool with UUID, will send events")
+
+        print(f"   FINAL is_valid_node: {is_valid_node}")
+        print(f"   Will send events: {is_valid_node}")
 
         async def wrapper():
             # Only send events for actual node tools

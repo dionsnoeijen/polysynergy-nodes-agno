@@ -47,7 +47,7 @@ class AgentSettingsTools(ServiceNode):
         )
     )
 
-    tool_hooks: list[Callable] | None = NodeVariableSettings(
+    tool_hooks: list | None = NodeVariableSettings(
         group="tools",
         dock=True,
         has_out=True,

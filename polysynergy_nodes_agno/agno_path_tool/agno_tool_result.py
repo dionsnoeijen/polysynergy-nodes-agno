@@ -19,8 +19,7 @@ class AgnoToolResult(Node):
             out_switch=False,
             in_switch_default=True,
             in_switch=False
-        ),
-        has_in=True
+        )
     )
 
     def execute(self):

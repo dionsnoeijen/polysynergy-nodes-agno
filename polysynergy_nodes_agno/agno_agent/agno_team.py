@@ -352,10 +352,10 @@ class AgnoTeam(ServiceNode):
                self.map_member_id_to_node_id[member_id] = node_id
 
         # Build tool instances and mapping using utility
-        tool_instances, function_name_to_node_id = await build_tool_mapping(tool_info_list)
+        tool_instances, function_name_to_node_id, mcp_toolkits = await build_tool_mapping(tool_info_list)
 
         # Create tool hook using utility
-        tool_hook = create_team_tool_hook(self.context, function_name_to_node_id)
+        tool_hook = create_team_tool_hook(self.context, function_name_to_node_id, mcp_toolkits)
 
         # Check for connected prompt node - prompt overrides manual settings
         prompt_data = find_connected_prompt(self)
