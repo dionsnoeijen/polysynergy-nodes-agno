@@ -1,6 +1,6 @@
-# 🛠️ MCP Tool
+# 🧠 OpenAI Model
 
-The `MCP Tool` node is part of the **agno_native_tools** category.
+The `OpenAI Model` node is part of the **agno_models** category.
 
 ---
 

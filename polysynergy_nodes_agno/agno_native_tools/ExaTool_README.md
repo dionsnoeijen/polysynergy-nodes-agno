@@ -1,6 +1,6 @@
-# 🛠️ MCP Tool
+# 🛠️ Exa Tool
 
-The `MCP Tool` node is part of the **agno_native_tools** category.
+The `Exa Tool` node is part of the **agno_native_tools** category.
 
 ---
 

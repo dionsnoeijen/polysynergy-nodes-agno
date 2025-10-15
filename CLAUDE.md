@@ -56,40 +56,40 @@ The project extends `polysynergy_node_runner` framework:
 - Support both dock UI and programmatic configuration
 - Implement async execution patterns
 
-### Agno Memory and Storage Architecture
+### Agno Database Architecture (v2)
 
-The project provides separate node types for Agno's dual storage system:
+The project uses Agno v2's unified `BaseDb` interface for all persistence needs:
 
-#### Memory Nodes (`agno_memory/`)
-Store AI-extracted memories and insights from conversations:
-- **LocalAgentMemory**: SQLite-backed memory for development
-- **DynamoDBAgentMemory**: DynamoDB-backed memory for production
-- Uses `agno.memory.v2.memory.Memory` base type
-- Provides `provide_memory_settings()` for agent configuration
+#### Database Nodes (`agno_db/`)
+Provide complete persistence for sessions, memory, metrics, and knowledge:
+- **SqliteDatabase**: SQLite-backed database for local development
+- **PostgreSQLDatabase**: PostgreSQL-backed database for production (ideal for large sessions)
+- **DynamoDBDatabase**: DynamoDB-backed database for serverless deployments
+- All use `agno.db.base.BaseDb` interface
+- Provide `provide_db_settings()` for agent configuration
+- Support tenant-prefixed table names for multi-tenancy
 
-#### Storage Nodes (`agno_storage/`)
-Store complete conversation history and session data:
-- **LocalAgentStorage**: SQLite-backed storage for development  
-- **DynamoDBAgentStorage**: DynamoDB-backed storage for production
-- Uses `agno.storage.base.Storage` base type
-- Stores raw conversation logs for history retrieval
+**Key Features**:
+- Unified interface across all database types
+- Configurable table names for sessions, memory, metrics, evals, and knowledge
+- History settings: `add_history_to_context`, `num_history_runs`, `read_chat_history`
+- Memory settings: `enable_user_memories`
 
 #### Type Pattern for Frontend Recognition
 **IMPORTANT**: Always use base interface types in NodeVariableSettings:
 ```python
 # Correct - uses base interface type
-memory: Memory | None = NodeVariableSettings(...)
-storage: Storage | None = NodeVariableSettings(...)
+db_instance: BaseDb | None = NodeVariableSettings(...)
 vector_db_instance: VectorDb | None = NodeVariableSettings(...)
 knowledge_base_instance: AgentKnowledge | None = NodeVariableSettings(...)
 
 # Wrong - frontend won't recognize dependency
-memory: SqliteMemory | None = NodeVariableSettings(...)
+db_instance: SqliteDb | None = NodeVariableSettings(...)
 vector_db_instance: LanceDb | None = NodeVariableSettings(...)
 knowledge_base_instance: PDFUrlKnowledgeBase | None = NodeVariableSettings(...)
 ```
 
-The frontend requires base interface types (`Memory`, `Storage`, `VectorDb`, `AgentKnowledge`) to:
+The frontend requires base interface types (`BaseDb`, `VectorDb`, `AgentKnowledge`) to:
 - Display proper connection types in the UI
 - Enable dependency resolution between nodes
 - Show full module paths for type matching

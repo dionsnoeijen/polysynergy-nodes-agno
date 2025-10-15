@@ -1,6 +1,6 @@
-# 🛠️ MCP Tool
+# ⚙️ Agent Response Model Settings
 
-The `MCP Tool` node is part of the **agno_native_tools** category.
+The `Agent Response Model Settings` node is part of the **agno_settings** category.
 
 ---
 

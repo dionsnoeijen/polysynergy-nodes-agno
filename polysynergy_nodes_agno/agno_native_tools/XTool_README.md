@@ -1,6 +1,6 @@
-# 🛠️ MCP Tool
+# 🛠️ XTool
 
-The `MCP Tool` node is part of the **agno_native_tools** category.
+The `XTool` node is part of the **agno_native_tools** category.
 
 ---
 

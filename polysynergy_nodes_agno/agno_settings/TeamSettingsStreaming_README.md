@@ -1,6 +1,6 @@
-# 🛠️ MCP Tool
+# ⚙️ Team Settings Streaming
 
-The `MCP Tool` node is part of the **agno_native_tools** category.
+The `Team Settings Streaming` node is part of the **agno_settings** category.
 
 ---
 

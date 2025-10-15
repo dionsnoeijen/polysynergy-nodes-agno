@@ -1,6 +1,6 @@
-# 🛠️ MCP Tool
+# 📚 Document Knowledge
 
-The `MCP Tool` node is part of the **agno_native_tools** category.
+The `Document Knowledge` node is part of the **agno_knowledge** category.
 
 ---
 

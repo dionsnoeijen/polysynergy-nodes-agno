@@ -1,6 +1,6 @@
-# 🛠️ MCP Tool
+# 🤖 Agno Team
 
-The `MCP Tool` node is part of the **agno_native_tools** category.
+The `Agno Team` node is part of the **agno_agent** category.
 
 ---
 

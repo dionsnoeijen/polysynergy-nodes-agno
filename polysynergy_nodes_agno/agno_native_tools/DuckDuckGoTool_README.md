@@ -1,6 +1,6 @@
-# 🛠️ MCP Tool
+# 🛠️ DuckDuckGo Tool
 
-The `MCP Tool` node is part of the **agno_native_tools** category.
+The `DuckDuckGo Tool` node is part of the **agno_native_tools** category.
 
 ---
 

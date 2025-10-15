@@ -1,6 +1,6 @@
-# 🛠️ MCP Tool
+# 💾 SQLite Database
 
-The `MCP Tool` node is part of the **agno_native_tools** category.
+The `SQLite Database` node is part of the **agno_db** category.
 
 ---
 

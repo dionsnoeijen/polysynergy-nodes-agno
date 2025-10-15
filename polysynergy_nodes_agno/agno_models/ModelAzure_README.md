@@ -1,6 +1,6 @@
-# 🛠️ MCP Tool
+# 🧠 Azure OpenAI
 
-The `MCP Tool` node is part of the **agno_native_tools** category.
+The `Azure OpenAI` node is part of the **agno_models** category.
 
 ---
 

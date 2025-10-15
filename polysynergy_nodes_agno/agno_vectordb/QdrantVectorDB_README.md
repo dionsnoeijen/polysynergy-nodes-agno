@@ -1,6 +1,6 @@
-# 🛠️ MCP Tool
+# 🗄️ Qdrant Vector Database
 
-The `MCP Tool` node is part of the **agno_native_tools** category.
+The `Qdrant Vector Database` node is part of the **agno_vectordb** category.
 
 ---
 

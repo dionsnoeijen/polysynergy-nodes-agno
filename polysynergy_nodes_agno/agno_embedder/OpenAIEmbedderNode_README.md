@@ -1,6 +1,6 @@
-# 🛠️ MCP Tool
+# 🔤 OpenAI Embedder
 
-The `MCP Tool` node is part of the **agno_native_tools** category.
+The `OpenAI Embedder` node is part of the **agno_embedder** category.
 
 ---
 

@@ -1,6 +1,6 @@
-# 🛠️ MCP Tool
+# 🧠 Google Gemini
 
-The `MCP Tool` node is part of the **agno_native_tools** category.
+The `Google Gemini` node is part of the **agno_models** category.
 
 ---
 

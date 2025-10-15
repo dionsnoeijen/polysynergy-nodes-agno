@@ -1,6 +1,6 @@
-# 🛠️ MCP Tool
+# 🧠 HuggingFace
 
-The `MCP Tool` node is part of the **agno_native_tools** category.
+The `HuggingFace` node is part of the **agno_models** category.
 
 ---
 

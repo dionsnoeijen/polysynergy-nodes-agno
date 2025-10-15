@@ -18,11 +18,16 @@ from polysynergy_node_runner.execution_context.is_compatible_provider import is_
     category="agno_vectordb",
     icon="lancedb.svg",
     has_enabled_switch=False,
+    metadata={"deployment": "local"},
 )
 class LanceDBVectorDB(ServiceNode):
     """
     LanceDB vector database service for use with knowledge bases.
     High-performance vector database built on Apache Arrow.
+
+    NOTE: Default configuration uses local file storage (/tmp/lancedb),
+    making it unsuitable for serverless/cloud deployments. For production
+    cloud environments, configure with LanceDB Cloud URI or use QdrantVectorDB.
     """
 
     # Core Configuration

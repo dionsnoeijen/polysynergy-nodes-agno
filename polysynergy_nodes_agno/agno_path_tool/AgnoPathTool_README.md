@@ -1,6 +1,6 @@
-# 🛠️ MCP Tool
+# 🛤️ Agno Path Tool
 
-The `MCP Tool` node is part of the **agno_native_tools** category.
+The `Agno Path Tool` node is part of the **agno_path_tool** category.
 
 ---
 

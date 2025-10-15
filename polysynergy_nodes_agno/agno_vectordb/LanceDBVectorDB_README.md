@@ -1,6 +1,6 @@
-# 🛠️ MCP Tool
+# 🗄️ LanceDB Vector Database
 
-The `MCP Tool` node is part of the **agno_native_tools** category.
+The `LanceDB Vector Database` node is part of the **agno_vectordb** category.
 
 ---
 

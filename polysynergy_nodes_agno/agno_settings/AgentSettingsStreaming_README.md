@@ -1,6 +1,6 @@
-# 🛠️ MCP Tool
+# ⚙️ Agent Streaming Settings
 
-The `MCP Tool` node is part of the **agno_native_tools** category.
+The `Agent Streaming Settings` node is part of the **agno_settings** category.
 
 ---
 

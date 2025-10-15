@@ -18,7 +18,7 @@ class PostgreSQLDatabase(ServiceNode):
     """
     PostgreSQL database for Agno v2 agents/teams/workflows.
     Provides persistent storage for sessions, memory, and metrics.
-    
+
     Ideal for large team sessions that exceed DynamoDB's 400KB item limit.
     Uses separate environment variables to avoid conflicts with main API database.
     """

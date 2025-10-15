@@ -9,8 +9,16 @@ from polysynergy_node_runner.setup_context.service_node import ServiceNode
     name="Ollama",
     category="agno_models",
     icon="ollama_logo.svg",
+    metadata={"deployment": "local"},
 )
 class ModelOllama(ServiceNode):
+    """
+    Ollama model provider for running local LLMs.
+
+    NOTE: This node requires a locally running Ollama server (default: localhost:11434),
+    making it unsuitable for serverless/cloud deployments. For production cloud
+    environments, use cloud-based model providers like OpenAI, Anthropic, or Google.
+    """
 
     host: str | None = NodeVariableSettings(
         group="connection",

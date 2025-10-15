@@ -1,6 +1,6 @@
-# 🛠️ MCP Tool
+# ⚙️ Agent Storage Settings
 
-The `MCP Tool` node is part of the **agno_native_tools** category.
+The `Agent Storage Settings` node is part of the **agno_settings** category.
 
 ---
 

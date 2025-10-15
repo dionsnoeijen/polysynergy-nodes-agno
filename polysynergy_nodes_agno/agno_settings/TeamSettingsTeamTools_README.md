@@ -1,6 +1,6 @@
-# 🛠️ MCP Tool
+# ⚙️ Team Settings Team Tools
 
-The `MCP Tool` node is part of the **agno_native_tools** category.
+The `Team Settings Team Tools` node is part of the **agno_settings** category.
 
 ---
 

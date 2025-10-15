@@ -1,6 +1,6 @@
-# 🛠️ MCP Tool
+# 📚 Document Chunking
 
-The `MCP Tool` node is part of the **agno_native_tools** category.
+The `Document Chunking` node is part of the **agno_knowledge** category.
 
 ---
 

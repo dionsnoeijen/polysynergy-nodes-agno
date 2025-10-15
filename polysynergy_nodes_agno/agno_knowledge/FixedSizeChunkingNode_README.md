@@ -1,6 +1,6 @@
-# 🛠️ MCP Tool
+# 📚 Fixed Size Chunking
 
-The `MCP Tool` node is part of the **agno_native_tools** category.
+The `Fixed Size Chunking` node is part of the **agno_knowledge** category.
 
 ---
 

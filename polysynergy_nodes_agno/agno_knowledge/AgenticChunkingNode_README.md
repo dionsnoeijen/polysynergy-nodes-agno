@@ -1,6 +1,6 @@
-# 🛠️ MCP Tool
+# 📚 Agentic Chunking
 
-The `MCP Tool` node is part of the **agno_native_tools** category.
+The `Agentic Chunking` node is part of the **agno_knowledge** category.
 
 ---
 

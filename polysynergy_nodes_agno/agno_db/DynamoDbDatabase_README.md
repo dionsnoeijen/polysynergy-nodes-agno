@@ -1,6 +1,6 @@
-# 🛠️ MCP Tool
+# 💾 DynamoDB Database
 
-The `MCP Tool` node is part of the **agno_native_tools** category.
+The `DynamoDB Database` node is part of the **agno_db** category.
 
 ---
 

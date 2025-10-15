@@ -1,6 +1,6 @@
-# 🛠️ MCP Tool
+# 🧠 Anthropic Claude
 
-The `MCP Tool` node is part of the **agno_native_tools** category.
+The `Anthropic Claude` node is part of the **agno_models** category.
 
 ---
 
