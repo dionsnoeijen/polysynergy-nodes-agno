@@ -99,6 +99,7 @@ class AgnoPathTool(Node):
 
     parameters: dict = NodeVariableSettings(
         label="Parameters",
+        has_out=True,
         dock=dock_dict(
             key_label="Name",
             value_label="Instructions",
