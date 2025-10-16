@@ -27,6 +27,7 @@ from polysynergy_nodes_agno.agno_agent.utils.send_chat_stream_event import send_
 from polysynergy_nodes_agno.agno_agent.utils.create_tool_hook import create_tool_hook
 from polysynergy_nodes_agno.agno_agent.utils.build_tool_mapping import build_tool_mapping
 from polysynergy_nodes_agno.agno_agent.utils.generate_presigned_urls import generate_presigned_urls_for_files
+from polysynergy_nodes_agno.agno_agent.utils.download_images_as_base64 import download_images_as_base64
 
 
 @node(
@@ -460,24 +461,41 @@ Do NOT invent or simplify filenames. Use the complete path as shown.
         if agent_files:
             print(f"Agent will process {len(agent_files)} files: {agent_files}")
 
-        # Convert relative file paths to presigned URLs
-        agent_file_urls = generate_presigned_urls_for_files(agent_files) if agent_files else []
-        print(f"DEBUG: Generated {len(agent_file_urls)} presigned URLs: {agent_file_urls}")
+        # Separate images from other files
+        image_paths = []
+        other_file_paths = []
 
-        # Parse files by type for native agno v2 support
+        for file_path in agent_files:
+            file_path_lower = file_path.lower()
+            if any(file_path_lower.endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']):
+                image_paths.append(file_path)
+            else:
+                other_file_paths.append(file_path)
+
+        # Download images as base64 (OpenAI cannot access presigned S3 URLs)
         images = []
+        if image_paths:
+            print(f"DEBUG: Downloading {len(image_paths)} images as base64...")
+            base64_images = download_images_as_base64(image_paths)
+            for img_data in base64_images:
+                print(f"DEBUG: Adding base64 image: {img_data['path']} ({img_data['mime_type']})")
+                images.append(Image(url=img_data['base64']))
+            print(f"DEBUG: Successfully converted {len(images)} images to base64")
+
+        # Convert other files to presigned URLs
+        agent_file_urls = generate_presigned_urls_for_files(other_file_paths) if other_file_paths else []
+        print(f"DEBUG: Generated {len(agent_file_urls)} presigned URLs for non-image files")
+
+        # Parse non-image files by type
         audio = []
         videos = []
         files = []
 
-        for i, file_path in enumerate(agent_files):
+        for i, file_path in enumerate(other_file_paths):
             file_url = agent_file_urls[i] if i < len(agent_file_urls) else file_path
             file_path_lower = file_path.lower()
 
-            if any(file_path_lower.endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']):
-                print(f"DEBUG: Adding image {i}: path={file_path}, url={file_url}")
-                images.append(Image(url=file_url))
-            elif any(file_path_lower.endswith(ext) for ext in ['.mp3', '.wav', '.m4a', '.flac', '.aac']):
+            if any(file_path_lower.endswith(ext) for ext in ['.mp3', '.wav', '.m4a', '.flac', '.aac']):
                 audio.append(Audio(url=file_url))
             elif any(file_path_lower.endswith(ext) for ext in ['.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm']):
                 videos.append(Video(url=file_url))
