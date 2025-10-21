@@ -85,7 +85,7 @@ class AgnoPathTool(Node):
         info='If True, the function will require user input before execution'
     )
 
-    user_input_fields: list[str] | None = NodeVariableSettings(
+    user_input_fields: list | None = NodeVariableSettings(
         label="User Input Fields",
         dock=True,
         info='List of fields that will be provided to the function as user input'

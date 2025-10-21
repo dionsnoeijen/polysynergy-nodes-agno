@@ -122,6 +122,13 @@ class AgnoTeam(ServiceNode):
         info="Optional name for the session, useful for debugging or display."
     )
 
+    user: dict | None = NodeVariableSettings(
+        label="User Context",
+        dock=True,
+        has_in=True,
+        info="Full user context (name, email, role, etc.) - automatically injected into team instructions"
+    )
+
     description: str | None = NodeVariableSettings(
         dock=True,
         has_in=True,
@@ -362,14 +369,22 @@ class AgnoTeam(ServiceNode):
         final_user_id = self.user_id
         final_session_id = self.session_id
         final_session_name = self.session_name
-        
+        final_user_context = None
+
         if prompt_data:
             final_user_id = prompt_data['user_id']
             final_session_id = prompt_data['session_id']
+            final_user_context = prompt_data.get('user_context')
             print(f'TEAM PROMPT OVERRIDE: user_id={final_user_id}, session_id={final_session_id}, session_name={final_session_name}')
+            if final_user_context:
+                print(f"DEBUG: Got user_context from prompt: {final_user_context}")
         else:
             print(f'TEAM MANUAL SETTINGS: user_id={final_user_id}, session_id={final_session_id}, session_name={final_session_name}')
-            
+
+        # Fall back to manual user setting if no prompt context
+        if not final_user_context and self.user:
+            final_user_context = self.user
+
         # Generate defaults if needed for DB history to work
         if db and not final_session_id:
             final_session_id = str(uuid.uuid4())
@@ -377,6 +392,28 @@ class AgnoTeam(ServiceNode):
         if db and not final_user_id:
             final_user_id = "default_user"
             print(f'TEAM USING DEFAULT USER ID: {final_user_id}')
+
+        # Enhance instructions with user context if available
+        user_context_text = ""
+        if final_user_context:
+            user_name = final_user_context.get('name', 'Unknown User')
+            user_email = final_user_context.get('email', '')
+            user_role = final_user_context.get('role', '')
+
+            user_context_text = f"\n\nYou are currently assisting: {user_name}"
+            if user_email:
+                user_context_text += f" ({user_email})"
+            if user_role:
+                user_context_text += f"\nTheir role: {user_role}"
+            user_context_text += "\n"
+            print(f"Enhanced team instructions with user context for: {user_name}")
+
+        # Combine instructions with user context
+        final_instructions = None
+        if self.instructions:
+            final_instructions = dedent(self.instructions) + user_context_text
+        elif user_context_text:
+            final_instructions = user_context_text
 
         print('DB', db, storage_settings)
 
@@ -389,7 +426,7 @@ class AgnoTeam(ServiceNode):
             model=model,
             user_id=final_user_id,
             session_id=final_session_id,
-            instructions=dedent(self.instructions) if self.instructions else None,
+            instructions=final_instructions,
             description=dedent(self.description) if self.description else None,
             expected_output=dedent(self.expected_output) if self.expected_output else None,
             respond_directly=self.respond_directly,

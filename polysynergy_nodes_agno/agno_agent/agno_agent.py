@@ -4,6 +4,7 @@ from typing import Literal, cast
 
 from agno.agent import Agent
 from agno.db import BaseDb
+from agno.db.base import SessionType
 from agno.models.base import Model
 from agno.team import Team
 from agno.media import Image, Audio, Video
@@ -21,6 +22,7 @@ from polysynergy_nodes_agno.agno_agent.utils.find_connected_db_settings import f
 from polysynergy_nodes_agno.agno_agent.utils.find_connected_path_tools import find_connected_path_tools
 from polysynergy_nodes_agno.agno_agent.utils.find_connected_settings import find_connected_settings
 from polysynergy_nodes_agno.agno_agent.utils.find_connected_tools import find_connected_tools
+from polysynergy_nodes_agno.agno_agent.utils.find_connected_guardrails import find_connected_guardrails
 from polysynergy_nodes_agno.agno_agent.utils.has_connected_agent_or_team import has_connected_agent_or_team
 from polysynergy_nodes_agno.agno_agent.utils.find_connected_prompt import find_connected_prompt
 from polysynergy_nodes_agno.agno_agent.utils.send_chat_stream_event import send_chat_stream_event
@@ -95,6 +97,13 @@ class AgnoAgent(ServiceNode):
         info="List of file URLs/paths for the agent to process (images, audio, video, documents)."
     )
 
+    guardrails: list | None = NodeVariableSettings(
+        label="Guardrails",
+        dock=True,
+        has_in=True,
+        info="List of guardrails to validate agent inputs (PII detection, prompt injection, moderation, etc.)"
+    )
+
     agent_name: str | None = NodeVariableSettings(
         dock=True,
         has_in=True,
@@ -105,6 +114,13 @@ class AgnoAgent(ServiceNode):
         dock=True,
         has_in=True,
         info="Default user ID to associate with this agent during runs."
+    )
+
+    user: dict | None = NodeVariableSettings(
+        label="User Context",
+        dock=True,
+        has_in=True,
+        info="Full user context (name, email, role, etc.) - automatically injected into agent instructions"
     )
 
     session_id: str | None = NodeVariableSettings(
@@ -309,6 +325,33 @@ class AgnoAgent(ServiceNode):
         info="Metrics collected during agent execution, such as response time or token usage."
     )
 
+    # HUMAN-IN-THE-LOOP STATE
+
+    _paused_run_response: any = None  # Private - not serialized to DynamoDB
+    # Agno agents maintain their own state, so we don't need to store the run_response
+
+    user_input_data: dict | bool | None = NodeVariableSettings(
+        label="User Input Data",
+        dock=True,
+        has_in=True,
+        has_out=False,
+        info="User's input to resume paused execution (dict for input, bool for confirmation)"
+    )
+
+    pause_reason: str | None = NodeVariableSettings(
+        label="Pause Reason",
+        dock=False,
+        has_out=True,
+        info="Why execution paused: 'confirmation', 'user_input', 'external_tool'"
+    )
+
+    pause_info: dict | None = NodeVariableSettings(
+        label="Pause Info",
+        dock=False,
+        has_out=True,
+        info="Details about the pause (type, schema, message) for UI display"
+    )
+
     # OUTPUT
 
     true_path: bool | str = PathSettings("Answer", info="This is the path for successful execution.")
@@ -345,6 +388,10 @@ class AgnoAgent(ServiceNode):
         props = extract_props_from_settings(settings)
         props.update(storage_settings)
 
+        # Ensure stream defaults to True if not set via settings
+        if 'stream' not in props:
+            props['stream'] = True
+
         # Debug logging
         print(f"DB settings: {storage_settings}")
         print(f"enable_user_memories in props: {props.get('enable_user_memories', 'NOT FOUND')}")
@@ -358,6 +405,9 @@ class AgnoAgent(ServiceNode):
 
         # Create tool hook using utility
         tool_hook = create_tool_hook(self.context, function_name_to_node_id, mcp_toolkits)
+
+        # Get connected guardrails
+        guardrails = find_connected_guardrails(self)
 
         # Check for connected prompt node - prompt overrides manual settings
         prompt_data = find_connected_prompt(self)
@@ -403,9 +453,9 @@ class AgnoAgent(ServiceNode):
                 debug_level=debug_level,
                 telemetry=self.telemetry,
                 tool_hooks=[tool_hook],
+                pre_hooks=guardrails if guardrails else [],
                 events_to_skip=[],
-                stream=True,
-                **props
+                **props  # stream=True comes from props (set as default on line 382)
             )
         except Exception as e:
             import traceback
@@ -416,7 +466,306 @@ class AgnoAgent(ServiceNode):
         await self._create_agent()
         return self.instance
 
+    async def _handle_pause(self, run_response):
+        """Handle agent pause - store state and prepare pause info for UI"""
+        print(f"[HITL] Agent execution paused - awaiting user input")
+
+        # Store the paused run response for resume (private - not serialized to DynamoDB)
+        self._paused_run_response = run_response
+
+        pause_info = {
+            "paused": True,
+            "run_id": getattr(run_response, 'run_id', None)
+        }
+
+        # Detect pause type and extract relevant info
+        if hasattr(run_response, 'tools_requiring_confirmation') and run_response.tools_requiring_confirmation:
+            self.pause_reason = "confirmation"
+            tools_info = []
+            for tool in run_response.tools_requiring_confirmation:
+                tools_info.append({
+                    "tool_name": tool.tool_name,
+                    "tool_args": tool.tool_args if hasattr(tool, 'tool_args') else None
+                })
+            pause_info["type"] = "confirmation"
+            pause_info["tools"] = tools_info
+            pause_info["message"] = f"Approve {len(tools_info)} tool call(s)?"
+            print(f"[HITL] Waiting for confirmation on {len(tools_info)} tool(s): {[t['tool_name'] for t in tools_info]}")
+
+        elif hasattr(run_response, 'user_input_schema') and run_response.user_input_schema:
+            self.pause_reason = "user_input"
+            input_fields = []
+            for field in run_response.user_input_schema:
+                input_fields.append({
+                    "name": field.name if hasattr(field, 'name') else None,
+                    "description": field.description if hasattr(field, 'description') else None,
+                    "type": field.type if hasattr(field, 'type') else None,
+                    "required": field.required if hasattr(field, 'required') else True
+                })
+            pause_info["type"] = "user_input"
+            pause_info["schema"] = input_fields
+            pause_info["message"] = "Agent needs user input"
+            print(f"[HITL] Waiting for user input: {len(input_fields)} field(s)")
+
+        elif hasattr(run_response, 'tools_awaiting_external_execution') and run_response.tools_awaiting_external_execution:
+            self.pause_reason = "external_tool"
+            tools_info = []
+            for tool in run_response.tools_awaiting_external_execution:
+                tools_info.append({
+                    "tool_name": tool.tool_name,
+                    "tool_args": tool.tool_args if hasattr(tool, 'tool_args') else None
+                })
+            pause_info["type"] = "external_tool"
+            pause_info["tools"] = tools_info
+            pause_info["message"] = f"Execute {len(tools_info)} external tool(s)"
+            print(f"[HITL] Waiting for external execution of {len(tools_info)} tool(s)")
+        else:
+            self.pause_reason = "unknown"
+            pause_info["type"] = "unknown"
+            pause_info["message"] = "Agent paused for unknown reason"
+            print(f"[HITL] Agent paused but reason unclear")
+
+        self.pause_info = pause_info
+
+        # Send pause event to chat UI via Redis
+        # IMPORTANT: Frontend expects run_id at top level, not in pause_data!
+        send_chat_stream_event(
+            flow_id=self.context.node_setup_version_id,
+            run_id=self.context.run_id,
+            node_id=self.id,
+            event={
+                "event": "AgentPaused",
+                "run_id": pause_info.get("run_id"),  # ← Frontend expects this at top level
+                "pause_type": pause_info["type"],
+                "pause_message": pause_info["message"],
+                "pause_data": {
+                    k: v for k, v in pause_info.items()
+                    if k not in ["paused", "run_id", "type", "message"]
+                }
+            },
+            agent_role="single",
+            is_member_agent=False
+        )
+        print(f"[HITL] Sent AgentPaused event to chat UI with run_id={pause_info.get('run_id')}")
+
+        # DO NOT set true_path or false_path
+        # This causes connections to become killers and flow stops
+        # Flow will save state to DynamoDB and exit
+
+    async def _handle_resume(self):
+        """Resume paused agent execution with user input
+
+        IMPORTANT: HITL in PolySynergy requires a DB (DynamoDBAgentStorage/LocalAgentStorage)!
+
+        Why? In a normal Agno application, you can use:
+            run_response = agent.run("...")
+            if run_response.is_paused:
+                # ... get user input
+                agent.continue_run(run_response=run_response)  # <-- run_response stays in memory
+
+        But in PolySynergy, the flow pauses and resumes via DynamoDB:
+            1. Agent pauses → flow stops → state saved to DynamoDB → process exits
+            2. User responds → NEW process starts → state loaded from DynamoDB
+            3. The run_response object is GONE (cannot be serialized to DynamoDB)
+
+        Solution: Use run_id instead of run_response:
+            agent.continue_run(run_id="...", updated_tools=[...])
+
+        This requires the agent to have a DB where it stores runs, so it can load
+        the paused run by run_id when resuming.
+        """
+        print(f"[HITL] Resuming with pause reason: {self.pause_reason}")
+
+        try:
+            # CRITICAL: Rebuild agent instance before resuming
+            # The agent instance doesn't exist after flow resumes from DynamoDB
+            # Check if instance is actually an Agent object, not a serialized string
+            if not isinstance(self.instance, Agent):
+                print(f"[HITL] Agent instance invalid (type: {type(self.instance)}), rebuilding...")
+                await self._create_agent()
+                print(f"[HITL] Agent instance rebuilt successfully")
+
+            # CHECK: Agent must have a DB connected for HITL to work
+            if not self.instance.db:
+                error_msg = (
+                    "HITL (Human-in-the-Loop) requires a database to store and resume paused runs.\n\n"
+                    "Why? PolySynergy flows pause and resume in separate processes:\n"
+                    "  1. Agent pauses → flow stops → state saved to DynamoDB → process exits\n"
+                    "  2. User responds → NEW process starts → state loaded from DynamoDB\n"
+                    "  3. The run_response object is gone (cannot be serialized)\n\n"
+                    "Solution: Connect a DB node to your agent:\n"
+                    "  • LocalAgentStorage (for development/testing)\n"
+                    "  • DynamoDBAgentStorage (for production)\n\n"
+                    "Then rebuild your flow to regenerate the executable."
+                )
+                print(f"[HITL] ERROR: {error_msg}")
+                self.false_path = error_msg
+                self.true_path = False
+                return
+
+            # Handle different resume types based on pause reason
+            if self.pause_reason == "confirmation":
+                # User provided boolean confirmation
+                confirmed = bool(self.user_input_data)
+                print(f"[HITL] User confirmation: {confirmed}")
+
+                # Agno agent maintains its own state and knows about the pending tools
+                # We just need to set the confirmation status
+                # The agent's run state includes the tools_requiring_confirmation
+
+            elif self.pause_reason == "user_input":
+                # User provided input data as dict
+                if not isinstance(self.user_input_data, dict):
+                    raise ValueError(f"Expected dict for user_input, got {type(self.user_input_data)}")
+                print(f"[HITL] User input data: {self.user_input_data}")
+                # Agno will handle user_input when we continue
+
+            elif self.pause_reason == "external_tool":
+                # User executed external tools and provided results
+                if not isinstance(self.user_input_data, dict):
+                    raise ValueError(f"Expected dict for external tool results, got {type(self.user_input_data)}")
+                print(f"[HITL] External tool results provided")
+                # Agno agent maintains state of tools awaiting external execution
+
+            # Continue the agent run
+            # The agent maintains its own run state via DB (DynamoDB/LocalAgentStorage)
+            print(f"[HITL] Calling acontinue_run on agent instance...")
+
+            # Agno v2: acontinue_run() can be called with run_id + updated_tools
+            # This allows us to update the tool confirmation status
+            #
+            # When we pass run_id instead of run_response:
+            # 1. Agent loads the paused run from its DB using the run_id
+            # 2. If we pass updated_tools, those replace the tools in the loaded run
+            # 3. Agent checks tool.confirmed flag to execute or reject tools
+
+            # Get the paused run_id from pause_info
+            paused_run_id = self.pause_info.get('run_id') if self.pause_info else None
+            if not paused_run_id:
+                raise ValueError("[HITL] No run_id found in pause_info - cannot resume")
+
+            print(f"[HITL] Resuming run_id: {paused_run_id}")
+
+            # For confirmation pause: we need to update tools with confirmed status
+            # Get the session from the agent's DB to access the stored runs
+            session = self.instance.db.get_session(
+                session_id=self.instance.session_id,
+                session_type=SessionType.AGENT,  # Single agent session
+                user_id=self.instance.user_id
+            )
+
+            if not session or not session.runs:
+                raise ValueError(f"[HITL] No session or runs found in DB for session_id={self.instance.session_id}")
+
+            # Find the paused run in the session
+            paused_run = next((r for r in session.runs if r.run_id == paused_run_id), None)
+            if not paused_run:
+                raise ValueError(f"[HITL] Paused run {paused_run_id} not found in session")
+
+            print(f"[HITL] Found paused run with {len(paused_run.tools) if paused_run.tools else 0} tools")
+
+            # Update tool confirmation status based on user input
+            if self.pause_reason == "confirmation":
+                confirmed = bool(self.user_input_data)
+                print(f"[HITL] Setting tool confirmation to: {confirmed}")
+
+                # Update all tools requiring confirmation
+                if paused_run.tools:
+                    for tool in paused_run.tools:
+                        if hasattr(tool, 'requires_confirmation') and tool.requires_confirmation:
+                            tool.confirmed = confirmed
+                            print(f"[HITL] Updated tool '{tool.tool_name}': confirmed={confirmed}")
+
+                # Save the updated session back to DB
+                self.instance.db.upsert_session(session)
+                print(f"[HITL] Saved updated session to DB")
+
+                # Now call acontinue_run with the updated run
+                # Pass the updated tools to ensure confirmation status is used
+                stream = self.instance.acontinue_run(
+                    run_id=paused_run_id,
+                    updated_tools=paused_run.tools
+                )
+            else:
+                # For other pause types, just call with run_id
+                stream = self.instance.acontinue_run(run_id=paused_run_id)
+
+            # Collect the response from the stream
+            async def _collect_response(event_stream):
+                final_response = None
+                async for event in event_stream:
+                    # Send chat events for resumed agent responses
+                    event_type = getattr(event, 'event', None) or getattr(event, 'type', None)
+
+                    if event_type in [
+                        "RunContent",
+                        "RunCompleted",
+                        "RunStarted",
+                        "ToolCallStarted",
+                        "ToolCallCompleted",
+                        "RunResponseContent",
+                        "RunResponse",
+                        "AgentRunResponseContent"
+                    ]:
+                        node_id = self.id
+                    else:
+                        node_id = None
+
+                    send_chat_stream_event(
+                        flow_id=self.context.node_setup_version_id,
+                        run_id=self.context.run_id,
+                        node_id=node_id,
+                        event=event,
+                        agent_role="single",
+                        is_member_agent=False
+                    )
+
+                    # Store the final response
+                    if hasattr(event, 'run_response'):
+                        final_response = event.run_response
+                    elif hasattr(event, 'content'):
+                        final_response = event
+
+                return final_response
+
+            continued_response = await _collect_response(stream)
+
+            print(f"[HITL] Resume completed, processing response")
+
+            # Process the continued response
+            if hasattr(continued_response, 'content'):
+                content = continued_response.content
+                if hasattr(content, 'model_dump'):
+                    self.true_path = content.model_dump()
+                    print(f"[HITL] Converted Pydantic model to dict: {self.true_path}")
+                else:
+                    self.true_path = content
+            else:
+                print(f"[HITL] Response has no content attribute, using str: {str(continued_response)}")
+                self.true_path = str(continued_response)
+
+            self.false_path = False
+
+            # Clear pause state
+            self._paused_run_response = None
+            self.pause_reason = None
+            self.pause_info = None
+
+        except Exception as e:
+            print(f"[HITL] Error during resume: {e}")
+            import traceback
+            traceback.print_exc()
+            self.false_path = NodeError.format(e, True)
+            self.true_path = False
+
     async def execute(self):
+        # RESUME PATH: Check if we're resuming from a paused state
+        # Note: _paused_run_response won't be available after DynamoDB restore (it's private)
+        # But we can detect resume by checking if pause_reason is set AND user_input_data is provided
+        if self.pause_reason and self.user_input_data is not None:
+            print(f"[HITL] Resuming paused agent execution with user input")
+            await self._handle_resume()
+            return
 
         # if this is part of a team, or a sub for another agent
         # that team or agent will handle the execution
@@ -424,18 +773,45 @@ class AgnoAgent(ServiceNode):
             print("Agent is connected to team/agent - skipping execution")
             return
 
-        # Get files from prompt data BEFORE creating agent
+        # Get files and user context from prompt data BEFORE creating agent
         prompt_data = find_connected_prompt(self)
         print(f"DEBUG: prompt_data = {prompt_data}")
         agent_files = []
+        final_user_context = None
+
         if prompt_data:
             agent_files = prompt_data.get('files', []) or []
             print(f"DEBUG: Got {len(agent_files)} files from prompt_data: {agent_files}")
+            # Use user_context from prompt if available (Portal sets this)
+            final_user_context = prompt_data.get('user_context')
+            if final_user_context:
+                print(f"DEBUG: Got user_context from prompt: {final_user_context}")
         else:
             agent_files = self.files or []
             print(f"DEBUG: Got {len(agent_files)} files from self.files: {agent_files}")
 
+        # Fall back to manual user setting if no prompt context
+        if not final_user_context and self.user:
+            final_user_context = self.user
+            print(f"DEBUG: Using manual user setting: {final_user_context}")
+
+        # Enhance instructions with user context if available
+        user_context = ""
+        if final_user_context:
+            user_name = final_user_context.get('name', 'Unknown User')
+            user_email = final_user_context.get('email', '')
+            user_role = final_user_context.get('role', '')
+
+            user_context = f"\n\nYou are currently assisting: {user_name}"
+            if user_email:
+                user_context += f" ({user_email})"
+            if user_role:
+                user_context += f"\nTheir role: {user_role}"
+            user_context += "\n"
+            print(f"Enhanced agent instructions with user context for: {user_name}")
+
         # Enhance instructions with file context if files are available
+        files_context = ""
         if agent_files:
             file_list = "\n".join([f"- {path}" for path in agent_files])
             files_context = f"""
@@ -446,9 +822,12 @@ Available files in this session:
 IMPORTANT: When calling tools with file parameters, you MUST use the exact file paths listed above.
 Do NOT invent or simplify filenames. Use the complete path as shown.
 """
-            original_instructions = self.instructions or ""
-            self.instructions = original_instructions + files_context
             print(f"Enhanced agent instructions with {len(agent_files)} file paths")
+
+        # Combine original instructions with enhancements
+        if user_context or files_context:
+            original_instructions = self.instructions or ""
+            self.instructions = original_instructions + user_context + files_context
 
         await self._create_agent()
 
@@ -507,10 +886,10 @@ Do NOT invent or simplify filenames. Use the complete path as shown.
 
         try:
             # In Agno v2, arun supports native file parameters
+            # Note: stream and stream_intermediate_steps come from Agent(**props) via settings
+            # stream defaults to True if no streaming settings node is connected
             stream = self.instance.arun(
                 self.prompt,
-                stream=True,
-                stream_intermediate_steps=True,
                 images=images if images else None,
                 audio=audio if audio else None,
                 videos=videos if videos else None,
@@ -560,6 +939,11 @@ Do NOT invent or simplify filenames. Use the complete path as shown.
                 return final_response
 
             response = await _collect_response(stream)
+
+            # PAUSE DETECTION: Check if agent paused for human input
+            if hasattr(response, 'is_paused') and response.is_paused:
+                await self._handle_pause(response)
+                return  # Exit without setting paths → flow pauses
 
             # Extract content from the final response
             if hasattr(response, 'content'):

@@ -41,7 +41,15 @@ def download_mixed_items_to_tmp(
         if is_url:
             # Handle as URL
             path = urlparse(url_or_key).path.lower()
-            if not any(ext in path for ext in exts):
+
+            # Check if valid extension exists in URL path OR in metadata filename
+            has_valid_ext = any(ext in path for ext in exts)
+            if not has_valid_ext and "filename" in md:
+                # Check if metadata filename has valid extension
+                filename_lower = md["filename"].lower()
+                has_valid_ext = any(filename_lower.endswith(ext) for ext in exts)
+
+            if not has_valid_ext:
                 continue
                 
             try:
@@ -54,14 +62,17 @@ def download_mixed_items_to_tmp(
                     print(f"Skipping {url_or_key}: too large ({content_length} bytes)")
                     continue
                 
-                # Generate filename
-                parsed = urlparse(url_or_key)
-                filename = os.path.basename(parsed.path)
-                if not filename or "." not in filename:
-                    # Generate filename from URL hash
-                    url_hash = hashlib.md5(url_or_key.encode()).hexdigest()[:8]
-                    ext = next((ext for ext in exts if ext in path), ".tmp")
-                    filename = f"download_{url_hash}{ext}"
+                # Generate filename - prefer metadata filename if available
+                if "filename" in md and md["filename"]:
+                    filename = md["filename"]
+                else:
+                    parsed = urlparse(url_or_key)
+                    filename = os.path.basename(parsed.path)
+                    if not filename or "." not in filename:
+                        # Generate filename from URL hash
+                        url_hash = hashlib.md5(url_or_key.encode()).hexdigest()[:8]
+                        ext = next((ext for ext in exts if ext in path), ".tmp")
+                        filename = f"download_{url_hash}{ext}"
                 
                 tmp_path = os.path.join(base_tmp, filename)
                 

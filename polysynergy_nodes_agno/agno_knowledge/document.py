@@ -20,6 +20,44 @@ from polysynergy_nodes_agno.agno_knowledge.utils.download_mixed_items_to_tmp imp
     has_enabled_switch=False,
 )
 class DocumentKnowledge(Node):
+    """
+    Load documents into a vector knowledge base with support for URLs, file paths, and bytes content.
+
+    Supports multiple input formats:
+    - URLs: Download and process documents from HTTP(S) URLs
+    - S3 keys: Download from S3 buckets
+    - Local file paths: Process existing files from /tmp/ or other locations
+    - Bytes content: Process in-memory document bytes (e.g., from HTTP requests)
+
+    Examples:
+
+    1. URLs:
+    {
+      "url": "https://example.com/document.pdf",
+      "metadata": {"source": "web", "category": "manual"}
+    }
+
+    2. Local file path:
+    {
+      "url": "/tmp/document.pdf",
+      "metadata": {"uploaded_by": "user123"}
+    }
+
+    3. Bytes content (recommended - use 'bytes' key):
+    {
+      "bytes": <PDF_BYTES>,
+      "metadata": {"filename": "report.pdf", "source": "http_request"}
+    }
+
+    4. Bytes content (alternative - via 'url' key):
+    {
+      "url": <PDF_BYTES>,
+      "metadata": {"filename": "report.pdf"}
+    }
+
+    The node automatically detects the input type and processes accordingly.
+    For bytes content, "filename" is REQUIRED in metadata to identify the document.
+    """
 
     vector_db: VectorDb | None = NodeVariableSettings(
         label="Vector Database",
@@ -36,15 +74,15 @@ class DocumentKnowledge(Node):
     )
 
     urls_or_paths: list = NodeVariableSettings(
-        label="URLs or File Paths",
+        label="URLs, Paths, or Bytes",
         has_in=True,
         dock=dock_dict(
-            key_label="URL/Path",
+            key_label="URL/Path/Bytes",
             value_label="Metadata",
-            info="List of URLs (http/https), S3 keys, or local file paths (/tmp/file.pdf) with optional metadata."
+            info="URLs (http/https), S3 keys, local paths (/tmp/file.pdf), or bytes content with metadata including 'filename'"
         ),
         default=[],
-        info="Mixed URLs, S3 keys, or local file paths with optional metadata.",
+        info="Mixed URLs, S3 keys, local file paths, or bytes content with optional metadata.",
     )
 
     allowed_extensions: list[str] | None = NodeVariableSettings(
@@ -75,16 +113,40 @@ class DocumentKnowledge(Node):
         try:
             exts: Sequence[str] = self.allowed_extensions or [".pdf", ".docx"]
 
-            # Process all URLs or paths - let the system detect what to do
-            enriched_items = enrich_metadata(self.urls_or_paths or [], extensions=exts)
+            # First separate bytes items from URL/path items
+            # because enrich_metadata doesn't handle bytes
+            raw_items = self.urls_or_paths or []
+            bytes_items = []
+            url_path_items = []
+
+            for item in raw_items:
+                if isinstance(item, dict):
+                    # Check for bytes content first (can be under "bytes" or "url" key)
+                    bytes_content = item.get("bytes")
+                    if bytes_content and isinstance(bytes_content, bytes):
+                        bytes_items.append(item)
+                        continue
+
+                    # Check if url value is actually bytes
+                    url_value = item.get("url")
+                    if isinstance(url_value, bytes):
+                        # Convert to bytes format
+                        bytes_items.append({"bytes": url_value, "metadata": item.get("metadata", {})})
+                        continue
+
+                # Not bytes, add to url/path items for enrichment
+                url_path_items.append(item)
+
+            # Process URLs/paths through enrichment
+            enriched_items = enrich_metadata(url_path_items, extensions=exts)
 
             # Separate URLs/S3 keys from local file paths
             url_items = []
             local_path_items = []
 
             for item in enriched_items:
-                path_or_url = item.get("url")  # enrich_metadata uses "url" key
                 metadata = item.get("metadata", {})
+                path_or_url = item.get("url")
 
                 if path_or_url:
                     # Check if it's a URL or local path
@@ -101,8 +163,37 @@ class DocumentKnowledge(Node):
             # Download URLs and S3 keys to tmp
             downloaded_items = download_mixed_items_to_tmp(url_items, extensions=exts) if url_items else []
 
-            # Combine downloaded and existing local files
-            path_items = downloaded_items + local_path_items
+            # Handle bytes items - write to temp files
+            bytes_path_items = []
+            if bytes_items:
+                import tempfile
+
+                for bytes_item in bytes_items:
+                    # Get filename from metadata - REQUIRED for bytes
+                    metadata = bytes_item.get("metadata", {})
+                    filename = metadata.get("filename")
+
+                    if not filename:
+                        raise ValueError(
+                            "Filename is required in metadata when providing bytes content. "
+                            "Example: {'bytes': <BYTES>, 'metadata': {'filename': 'document.pdf'}}"
+                        )
+
+                    # Ensure file has extension
+                    if not any(filename.endswith(ext) for ext in exts):
+                        # Default to .pdf if no recognized extension
+                        filename = f"{filename}.pdf"
+
+                    # Write bytes to temp file
+                    temp_path = os.path.join(tempfile.gettempdir(), filename)
+                    with open(temp_path, 'wb') as f:
+                        f.write(bytes_item["bytes"])
+
+                    print(f"Wrote {len(bytes_item['bytes'])} bytes to {temp_path}")
+                    bytes_path_items.append({"path": temp_path, "metadata": metadata})
+
+            # Combine downloaded, existing local files, and bytes-converted files
+            path_items = downloaded_items + local_path_items + bytes_path_items
 
             if not path_items:
                 self.false_path = "No valid documents found after processing URLs and tmp paths."

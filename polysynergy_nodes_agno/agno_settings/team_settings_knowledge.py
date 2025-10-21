@@ -43,6 +43,13 @@ class TeamSettingsKnowledge(ServiceNode):
         info="If True, adds references to the knowledge in the team agent's responses.",
     )
 
+    max_results: int | None = NodeVariableSettings(
+        label="Max Results",
+        dock=True,
+        default=10,
+        info="Maximum number of results to retrieve from knowledge base on each search (default: 10).",
+    )
+
     retriever: str | None = NodeVariableSettings(
         dock=True,
         info="Retriever settings for the team, such as retriever type or configuration.",

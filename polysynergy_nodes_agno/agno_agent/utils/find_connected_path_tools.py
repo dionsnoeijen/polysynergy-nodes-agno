@@ -124,6 +124,16 @@ def create_tool_and_invoke(node: Node, tool_node, agent=None) -> Function:
     if add_instructions is not None:
         function_kwargs['add_instructions'] = add_instructions
 
+    # Add user_input_fields for HITL user input pattern
+    user_input_fields = getattr(tool_node, 'user_input_fields', None)
+    if user_input_fields is not None:
+        function_kwargs['user_input_fields'] = user_input_fields
+
+    # Add sanitize_arguments
+    sanitize_arguments = getattr(tool_node, 'sanitize_arguments', None)
+    if sanitize_arguments is not None:
+        function_kwargs['sanitize_arguments'] = sanitize_arguments
+
     function = Function(**function_kwargs)
     
     return function

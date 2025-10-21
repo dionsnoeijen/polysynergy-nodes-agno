@@ -7,7 +7,7 @@ authors = ["Dion Snoeijen"]
 [tool.poetry.dependencies]
 python = "^3.12"
 polysynergy_node_runner = { path = "../node_runner", develop = true }
-agno = "^2.0"
+agno = "^2.1.9"
 lancedb = "^0.17.0"
 exa-py = "^1.14.18"
 tweepy = "^4.16.0"

@@ -45,9 +45,11 @@ class ModelOpenAi(ServiceNode):
 
     model: str | None = NodeVariableSettings(
         label="Model",
-        default="gpt-4o",
+        default="gpt-5-mini",
         group="model",
         dock=dock_property(select_values={
+            "gpt-5": "gpt-5",
+            "gpt-5-mini": "gpt-5-mini",
             "gpt-4.1": "gpt-4.1 (10.000 TPM)",
             "gpt-4.1-mini": "gpt-4.1-mini (60.000 TPM)",
             "gpt-4.1-nano": "gpt-4.1-nano (60.000 TPM)",

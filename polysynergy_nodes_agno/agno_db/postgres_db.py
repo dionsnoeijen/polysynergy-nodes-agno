@@ -11,7 +11,7 @@ from polysynergy_node_runner.utils.tenant_project_naming import get_prefixed_nam
 @node(
     name="PostgreSQL Database",
     category="agno_db",
-    icon="database.svg",
+    icon="agno.svg",
     has_enabled_switch=False,
 )
 class PostgreSQLDatabase(ServiceNode):

@@ -52,6 +52,13 @@ class AgentSettingsKnowledge(ServiceNode):
         info="If True, adds references from the knowledge base to the agent output.",
     )
 
+    max_results: int | None = NodeVariableSettings(
+        label="Max Results",
+        dock=True,
+        default=10,
+        info="Maximum number of results to retrieve from knowledge base on each search (default: 10).",
+    )
+
     retriever: Callable[..., list[dict | str]] | None = NodeVariableSettings(
         dock=True,
         info="Custom retrieval function for knowledge search. Overrides the default search_knowledge method.",
@@ -89,7 +96,11 @@ class AgentSettingsKnowledge(ServiceNode):
             connected_vector_db = await find_connected_service(self, "vector_db", VectorDb)
             print(f"[AgentSettingsKnowledge] Got knowledge base: {type(connected_vector_db).__name__ if connected_vector_db else 'None'}")
             if connected_vector_db:
-                self.knowledge = Knowledge(vector_db=connected_vector_db)
+                self.knowledge = Knowledge(
+                    vector_db=connected_vector_db,
+                    max_results=self.max_results
+                )
+                print(f"[AgentSettingsKnowledge] Created Knowledge with max_results={self.max_results}")
             return self
         except Exception as e:
             print(f"[AgentSettingsKnowledge] ERROR: {e}")
