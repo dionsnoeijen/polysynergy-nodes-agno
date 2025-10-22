@@ -1,6 +1,6 @@
 import uuid
 from textwrap import dedent
-from typing import cast, Literal
+from typing import Any, cast, Literal
 
 from agno.agent import Agent
 from agno.db import BaseDb
@@ -20,6 +20,8 @@ from polysynergy_nodes_agno.agno_agent.utils.find_connected_service import find_
 from polysynergy_nodes_agno.agno_agent.utils.find_connected_settings import find_connected_settings
 from polysynergy_nodes_agno.agno_agent.utils.find_connected_db_settings import find_connected_db_settings
 from polysynergy_nodes_agno.agno_agent.utils.find_connected_tools import find_connected_tools
+from polysynergy_nodes_agno.agno_agent.utils.find_connected_path_tools import find_connected_path_tools
+from polysynergy_nodes_agno.agno_agent.utils.find_connected_guardrails import find_connected_guardrails
 from polysynergy_nodes_agno.agno_agent.utils.has_connected_agent_or_team import has_connected_agent_or_team
 from polysynergy_nodes_agno.agno_agent.utils.find_connected_prompt import find_connected_prompt
 from polysynergy_nodes_agno.agno_agent.utils.send_chat_stream_event import send_chat_stream_event
@@ -73,6 +75,13 @@ class AgnoTeam(ServiceNode):
         info="If True, stores member responses in the team run output (Agno v2).",
     )
 
+    show_full_reasoning: bool = NodeVariableSettings(
+        dock=True,
+        default=False,
+        info="Show the full reasoning process from reasoning models (o1, o3-mini, gpt-5-mini, DeepSeek-R1, etc.)",
+        node=False
+    )
+
     # INPUT
 
     model: Model | None = NodeVariableSettings(
@@ -96,6 +105,13 @@ class AgnoTeam(ServiceNode):
         dock=True,
         has_in=True,
         info="The prompt or task description for the agent to execute."
+    )
+
+    guardrails: Any | list | None = NodeVariableSettings(
+        label="Guardrails",
+        dock=True,
+        has_in=True,
+        info="List of guardrails to validate team inputs (PII detection, prompt injection, moderation, etc.)"
     )
 
     team_name: str | None = NodeVariableSettings(
@@ -297,6 +313,12 @@ class AgnoTeam(ServiceNode):
         info="List of tools available to the model. Tools can be functions, Toolkits, or dict definitions.",
     )
 
+    path_tools: str | None = NodeVariableSettings(
+        has_out=True,
+        out_type_override="polysynergy_nodes_agno.agno_native_tools.agno_path_tool.AgnoPathTool",
+        info="Path tools (flow tools) that execute subflows and return results to the agent.",
+    )
+
     # METRICS
 
     metrics: dict = NodeVariableSettings(
@@ -323,6 +345,11 @@ class AgnoTeam(ServiceNode):
 
         settings = await find_connected_settings(self)
         tool_info_list = await find_connected_tools(self)
+        path_tools = find_connected_path_tools(self)
+        print(f"🔍 [TEAM {self.handle}] Found {len(path_tools)} path tools")
+        for i, pt in enumerate(path_tools):
+            print(f"   {i+1}. {getattr(pt, 'name', 'UNKNOWN NAME')} (type: {type(pt).__name__})")
+        guardrails = find_connected_guardrails(self)
         member_info_list = await find_connected_members(self)
 
         raw_level = self.debug_level or "1"  # default naar "1" als None of lege string
@@ -331,7 +358,7 @@ class AgnoTeam(ServiceNode):
         if model is None:
             raise Exception("No model connected. Please connect a model to the node.")
 
-        return model, db, storage_settings, settings, debug_level, tool_info_list, member_info_list
+        return model, db, storage_settings, settings, debug_level, tool_info_list, path_tools, guardrails, member_info_list
 
     async def _create_team(self):
         (model,
@@ -340,6 +367,8 @@ class AgnoTeam(ServiceNode):
          settings,
          debug_level,
          tool_info_list,
+         path_tools,
+         guardrails,
          member_info_list
          ) = await self._setup()
         props = extract_props_from_settings(settings)
@@ -359,7 +388,7 @@ class AgnoTeam(ServiceNode):
                self.map_member_id_to_node_id[member_id] = node_id
 
         # Build tool instances and mapping using utility
-        tool_instances, function_name_to_node_id, mcp_toolkits = await build_tool_mapping(tool_info_list)
+        tool_instances, function_name_to_node_id, mcp_toolkits = await build_tool_mapping(tool_info_list, path_tools)
 
         # Create tool hook using utility
         tool_hook = create_team_tool_hook(self.context, function_name_to_node_id, mcp_toolkits)
@@ -437,12 +466,13 @@ class AgnoTeam(ServiceNode):
             debug_level=debug_level,
             telemetry=self.telemetry,
             tool_hooks=[tool_hook],
+            pre_hooks=guardrails if guardrails else [],
             events_to_skip=[],
             stream=True,
             **props
         )
 
-    async def provide_instance(self):
+    async def provide_instance(self) -> Team:
         await self._create_team()
         return self.instance
 
@@ -465,9 +495,10 @@ class AgnoTeam(ServiceNode):
         try:
             # In Agno v2, arun returns AsyncIterator[TeamRunOutputEvent] when stream=True
             stream = self.instance.arun(
-                self.prompt, 
+                self.prompt,
                 stream=True,
-                stream_intermediate_steps=True
+                stream_intermediate_steps=True,
+                show_full_reasoning=self.show_full_reasoning
             )
 
             async def _collect_response(event_stream):
@@ -495,6 +526,9 @@ class AgnoTeam(ServiceNode):
                         "TeamRunStarted",
                         "ToolCallStarted",
                         "ToolCallCompleted",
+                        "ReasoningContent",  # Reasoning model thinking
+                        "RunReasoningContent",  # Run-specific reasoning
+                        "TeamRunReasoningContent",  # Team reasoning
                         "RunResponseContent",  # Backward compat
                         "TeamRunResponseContent",  # Backward compat
                         "RunResponse",  # Backward compat

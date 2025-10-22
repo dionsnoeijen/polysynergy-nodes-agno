@@ -1,3 +1,6 @@
+from agno.agent import Agent
+from agno.team import Team
+
 from polysynergy_node_runner.execution_context.flow_state import FlowState
 from polysynergy_node_runner.setup_context.dock_property import dock_dict, dock_text_area
 from polysynergy_node_runner.setup_context.node import Node
@@ -17,7 +20,8 @@ class AgnoPathTool(Node):
 
     agent: str = NodeVariableSettings(
         label="Agent",
-        has_in=True
+        has_in=True,
+        info="Agent or Team that can use this path tool.",
     )
 
     name: str = NodeVariableSettings(

@@ -1,6 +1,6 @@
 import uuid
 from textwrap import dedent
-from typing import Literal, cast
+from typing import Literal, cast, Any
 
 from agno.agent import Agent
 from agno.db import BaseDb
@@ -76,6 +76,13 @@ class AgnoAgent(ServiceNode):
         node=False
     )
 
+    show_full_reasoning: bool = NodeVariableSettings(
+        dock=True,
+        default=False,
+        info="Show the full reasoning process from reasoning models (o1, o3-mini, gpt-5-mini, DeepSeek-R1, etc.)",
+        node=False
+    )
+
     # INPUT
 
     agent_or_team: Agent | Team | None = NodeVariableSettings(
@@ -97,7 +104,7 @@ class AgnoAgent(ServiceNode):
         info="List of file URLs/paths for the agent to process (images, audio, video, documents)."
     )
 
-    guardrails: list | None = NodeVariableSettings(
+    guardrails: list | Any | None = NodeVariableSettings(
         label="Guardrails",
         dock=True,
         has_in=True,
@@ -684,11 +691,15 @@ class AgnoAgent(ServiceNode):
                 # Pass the updated tools to ensure confirmation status is used
                 stream = self.instance.acontinue_run(
                     run_id=paused_run_id,
-                    updated_tools=paused_run.tools
+                    updated_tools=paused_run.tools,
+                    show_full_reasoning=self.show_full_reasoning
                 )
             else:
                 # For other pause types, just call with run_id
-                stream = self.instance.acontinue_run(run_id=paused_run_id)
+                stream = self.instance.acontinue_run(
+                    run_id=paused_run_id,
+                    show_full_reasoning=self.show_full_reasoning
+                )
 
             # Collect the response from the stream
             async def _collect_response(event_stream):
@@ -705,7 +716,9 @@ class AgnoAgent(ServiceNode):
                         "ToolCallCompleted",
                         "RunResponseContent",
                         "RunResponse",
-                        "AgentRunResponseContent"
+                        "AgentRunResponseContent",
+                        "ReasoningContent",  # Reasoning model thinking
+                        "RunReasoningContent",  # Run-specific reasoning
                     ]:
                         node_id = self.id
                     else:
@@ -893,7 +906,8 @@ Do NOT invent or simplify filenames. Use the complete path as shown.
                 images=images if images else None,
                 audio=audio if audio else None,
                 videos=videos if videos else None,
-                files=files if files else None
+                files=files if files else None,
+                show_full_reasoning=self.show_full_reasoning
             )
 
             async def _collect_response(event_stream):
@@ -915,7 +929,9 @@ Do NOT invent or simplify filenames. Use the complete path as shown.
                         "ToolCallCompleted",
                         "RunResponseContent",
                         "RunResponse",
-                        "AgentRunResponseContent"
+                        "AgentRunResponseContent",
+                        "ReasoningContent",  # Reasoning model thinking
+                        "RunReasoningContent",  # Run-specific reasoning
                     ]:
                         node_id = self.id  # Use the agent node's own ID
                     else:
