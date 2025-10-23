@@ -49,40 +49,37 @@ def create_tool_hook(context, function_name_to_node_id: Dict[str, str], mcp_tool
         print(f"   is_node_tool: {is_node_tool}")
         print(f"   node_id: {node_id}")
 
-        # Additional validation: Check if the node_id looks like a valid node
-        # (has UUID format) and exists in the execution flow
+        # Check if this is a registered node by looking in state
+        # Don't check execution_flow['nodes_order'] because tools may not be executed yet
         is_valid_node = False
         node_order = None
 
         if is_node_tool:
-            print(f"   Checking execution_flow for node {node_id}")
-            print(f"   nodes_order: {[n.get('id', 'NO_ID') for n in context.execution_flow.get('nodes_order', [])]}")
-            # Verify the node exists in the execution flow
-            for node in context.execution_flow.get("nodes_order", []):
-                if node["id"] == node_id:
-                    node_handle = node.get("handle", "")
-                    node_order = node.get("order")
-                    print(f"   ✓ Found node in execution_flow: handle={node_handle}, order={node_order}")
-                    # Only consider it valid if it has a proper handle
-                    if node_handle:
+            # For UUID node_ids, check if registered in state
+            if is_valid_uuid(node_id):
+                print(f"   Checking if node {node_id} is registered in state")
+                try:
+                    # Check if node is registered in state (works even if not executed yet)
+                    node_instance = context.state.get_node_by_id(node_id)
+                    if node_instance:
+                        print(f"   ✓ Found node in state: handle={node_instance.handle}")
                         is_valid_node = True
-                        print(f"   ✓ Node is VALID (has handle)")
+
+                        # Try to find order if node already executed
+                        for node in context.execution_flow.get("nodes_order", []):
+                            if node["id"] == node_id:
+                                node_order = node.get("order")
+                                print(f"   ✓ Node already executed with order={node_order}")
+                                break
                     else:
-                        print(f"   ✗ Warning: Node {node_id} has no handle, skipping storage")
-                    break
+                        print(f"   ✗ Node {node_id} not registered in state")
+                except Exception as e:
+                    print(f"   ✗ Error checking state: {e}")
             else:
-                print(f"   ✗ Node {node_id} NOT found in execution_flow")
-
-            # Double-check: node_id should be a UUID for real nodes
-            if is_valid_node and not is_valid_uuid(node_id):
-                print(f"   ✗ Warning: Node ID {node_id} doesn't look like a UUID")
+                # Non-UUID node_id (e.g. path tools with function names)
+                # These are internal/dynamic tools, not node tools
+                print(f"   ✗ node_id '{node_id}' is not a UUID - treating as internal tool")
                 is_valid_node = False
-
-        # SIMPLIFIED FIX: If it's a node tool with valid UUID, send events
-        # Don't check execution_flow because ServiceNodes may not be added yet
-        if is_node_tool and is_valid_uuid(node_id):
-            is_valid_node = True
-            print(f"   ✓ OVERRIDE: Valid node tool with UUID, will send events")
 
         print(f"   FINAL is_valid_node: {is_valid_node}")
         print(f"   Will send events: {is_valid_node}")
