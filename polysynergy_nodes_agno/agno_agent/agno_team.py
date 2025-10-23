@@ -503,19 +503,20 @@ class AgnoTeam(ServiceNode):
 
             async def _collect_response(event_stream):
                 final_response = None
+                accumulated_content = []
                 event_count = 0
                 member_responses = {}
-                
+
                 async for event in event_stream:
                     event_count += 1
-                    
+
                     # Get event type (v2 naming)
                     event_type = getattr(event, 'event', None) or getattr(event, 'type', None)
-                    
+
                     # Determine node_id for the event
                     agent_id = getattr(event, "agent_id", None)
                     team_id = getattr(event, "team_id", None)
-                    
+
                     # Map to correct node for team members
                     if event_type in [
                         "RunContent",
@@ -539,12 +540,12 @@ class AgnoTeam(ServiceNode):
                                   or self.id)
                     else:
                         node_id = None
-                    
+
                     # Determine if this is a member or leader event
                     is_member_agent = agent_id in self.map_member_id_to_node_id
                     agent_role = "member" if is_member_agent else "leader"
                     parent_team_id = self.id if is_member_agent else None
-                    
+
                     # Get member index if available
                     member_index = None
                     if is_member_agent and hasattr(self, 'team_members'):
@@ -553,7 +554,7 @@ class AgnoTeam(ServiceNode):
                             member_index = member_ids.index(agent_id)
                         except (ValueError, AttributeError):
                             member_index = None
-                    
+
                     # Send events to UI
                     send_chat_stream_event(
                         flow_id=self.context.node_setup_version_id,
@@ -565,7 +566,7 @@ class AgnoTeam(ServiceNode):
                         parent_team_id=parent_team_id,
                         member_index=member_index
                     )
-                    
+
                     # Collect member responses if enabled
                     if self.store_member_responses and hasattr(event, 'content'):
                         if agent_id or team_id:
@@ -573,13 +574,28 @@ class AgnoTeam(ServiceNode):
                             if member_id not in member_responses:
                                 member_responses[member_id] = []
                             member_responses[member_id].append(event.content)
-                    
-                    # Store the final response
-                    if hasattr(event, 'run_response'):
-                        final_response = event.run_response
-                    elif hasattr(event, 'content'):
-                        final_response = event
-                        
+
+                    # Store FINAL response events (not intermediate content)
+                    if event_type in ['TeamRunResponse', 'TeamRunCompleted', 'RunResponse', 'RunCompleted']:
+                        if hasattr(event, 'run_response'):
+                            final_response = event.run_response
+
+                    # Accumulate streaming content as fallback (for team leader content)
+                    if hasattr(event, 'content') and event_type in ['TeamRunContent', 'RunContent']:
+                        # Only accumulate if it's the team leader (not a member)
+                        if not is_member_agent:
+                            accumulated_content.append(event.content)
+
+                # Use final response or accumulated content
+                if final_response is None and accumulated_content:
+                    # Join all content pieces
+                    combined_content = ''.join(str(c) for c in accumulated_content)
+                    # Create a simple response object
+                    class SimpleResponse:
+                        def __init__(self, content):
+                            self.content = content
+                    final_response = SimpleResponse(combined_content)
+
                 return final_response, member_responses
 
             response, member_responses = await _collect_response(stream)
