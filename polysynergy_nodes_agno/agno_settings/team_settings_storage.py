@@ -1,4 +1,3 @@
-from agno.storage.base import Storage
 from polysynergy_node_runner.setup_context.node_decorator import node
 from polysynergy_node_runner.setup_context.node_variable_settings import NodeVariableSettings
 from polysynergy_node_runner.setup_context.service_node import ServiceNode
@@ -12,15 +11,8 @@ from polysynergy_node_runner.setup_context.service_node import ServiceNode
 class TeamSettingsStorage(ServiceNode):
 
     settings: list = [
-        'storage',
         'extra_data',
     ]
-
-    storage: Storage | None = NodeVariableSettings(
-        dock=True,
-        has_in=True,
-        info="The storage backend used by this agent for team settings. For example: DynamoDbStorage, SqliteStorage, etc.",
-    )
 
     extra_data: dict | None = NodeVariableSettings(
         dock=True,

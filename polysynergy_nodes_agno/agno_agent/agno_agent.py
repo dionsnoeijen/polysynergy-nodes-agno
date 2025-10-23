@@ -700,7 +700,7 @@ class AgnoAgent(ServiceNode):
                             print(f"[HITL] Updated tool '{tool.tool_name}': confirmed={confirmed}")
 
                 # Save the updated session back to DB
-                self.instance.db.upsert_session(session)
+                await self.instance.db.upsert_session(session)
                 print(f"[HITL] Saved updated session to DB")
 
                 # Now call acontinue_run with the updated run
