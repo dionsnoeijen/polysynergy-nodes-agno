@@ -395,9 +395,25 @@ class AgnoAgent(ServiceNode):
         props = extract_props_from_settings(settings)
         props.update(storage_settings)
 
-        # Ensure stream defaults to True if not set via settings
+        # Auto-disable streaming if no prompt node is connected
+        # (streaming only makes sense for interactive chat)
         if 'stream' not in props:
-            props['stream'] = True
+            # Check if there's a prompt node connected (regardless of data)
+            has_prompt_node = False
+            for conn in self.get_in_connections():
+                source_node = self.state.get_node_by_id(conn.source_node_id)
+                if source_node and source_node.path == 'polysynergy_nodes.play.prompt.Prompt':
+                    has_prompt_node = True
+                    break
+
+            if has_prompt_node:
+                # Prompt connected → enable streaming for interactive chat
+                props['stream'] = True
+                print("[Agent] Prompt node connected, auto-enabled streaming")
+            else:
+                # No prompt connected → disable streaming
+                props['stream'] = False
+                print("[Agent] No prompt node connected, auto-disabled streaming")
 
         # Debug logging
         print(f"DB settings: {storage_settings}")
@@ -762,9 +778,9 @@ class AgnoAgent(ServiceNode):
             # Process the continued response
             if hasattr(continued_response, 'content'):
                 content = continued_response.content
-                if hasattr(content, 'model_dump'):
-                    self.true_path = content.model_dump()
-                    print(f"[HITL] Converted Pydantic model to dict: {self.true_path}")
+                if hasattr(content, 'model_dump_json'):
+                    self.true_path = content.model_dump_json()
+                    print(f"[HITL] Converted Pydantic model to JSON string: {self.true_path}")
                 else:
                     self.true_path = content
             else:
@@ -912,17 +928,43 @@ Do NOT invent or simplify filenames. Use the complete path as shown.
         print(f"DEBUG: About to call arun with images={[str(img.url) for img in images]}")
 
         try:
-            # In Agno v2, arun supports native file parameters
-            # Note: stream and stream_intermediate_steps come from Agent(**props) via settings
-            # stream defaults to True if no streaming settings node is connected
-            stream = self.instance.arun(
-                self.prompt,
-                images=images if images else None,
-                audio=audio if audio else None,
-                videos=videos if videos else None,
-                files=files if files else None,
-                show_full_reasoning=self.show_full_reasoning
-            )
+            # Get stream setting from instance (set based on prompt node connection)
+            should_stream = getattr(self.instance, 'stream', False)
+            print(f"[Agent execute] Using stream={should_stream}")
+
+            if should_stream:
+                # In Agno v2, arun returns AsyncIterator when stream=True
+                stream = self.instance.arun(
+                    self.prompt,
+                    images=images if images else None,
+                    audio=audio if audio else None,
+                    videos=videos if videos else None,
+                    files=files if files else None,
+                    show_full_reasoning=self.show_full_reasoning
+                )
+            else:
+                # When stream=False, arun returns a coroutine that resolves to RunOutput
+                response = await self.instance.arun(
+                    self.prompt,
+                    images=images if images else None,
+                    audio=audio if audio else None,
+                    videos=videos if videos else None,
+                    files=files if files else None,
+                    show_full_reasoning=self.show_full_reasoning
+                )
+                # Process non-streaming response
+                if hasattr(response, 'content'):
+                    content = response.content
+                    if hasattr(content, 'model_dump_json'):
+                        self.true_path = content.model_dump_json()
+                        print(f"[Agent] Converted Pydantic model to JSON string: {self.true_path}")
+                    else:
+                        self.true_path = content
+                else:
+                    print(f"Response has no content attribute, using str: {str(response)}")
+                    self.true_path = str(response)
+                self.false_path = False
+                return
 
             async def _collect_response(event_stream):
                 final_response = None
@@ -992,10 +1034,10 @@ Do NOT invent or simplify filenames. Use the complete path as shown.
             # Extract content from the final response
             if hasattr(response, 'content'):
                 content = response.content
-                # If content is a Pydantic model, convert to dict/JSON
-                if hasattr(content, 'model_dump'):
-                    self.true_path = content.model_dump()
-                    print(f"Converted Pydantic model to dict: {self.true_path}")
+                # If content is a Pydantic model, convert to JSON string
+                if hasattr(content, 'model_dump_json'):
+                    self.true_path = content.model_dump_json()
+                    print(f"Converted Pydantic model to JSON string: {self.true_path}")
                 else:
                     self.true_path = content
             else:

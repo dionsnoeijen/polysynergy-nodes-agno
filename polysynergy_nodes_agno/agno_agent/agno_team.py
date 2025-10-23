@@ -446,6 +446,22 @@ class AgnoTeam(ServiceNode):
 
         print('DB', db, storage_settings)
 
+        # Auto-disable streaming if no prompt node is connected
+        # (streaming only makes sense for interactive chat)
+        # Check if there's a prompt node connected (regardless of data)
+        has_prompt_node = False
+        for conn in self.get_in_connections():
+            source_node = self.state.get_node_by_id(conn.source_node_id)
+            if source_node and source_node.path == 'polysynergy_nodes.play.prompt.Prompt':
+                has_prompt_node = True
+                break
+
+        should_stream = has_prompt_node
+        if has_prompt_node:
+            print("[Team] Prompt node connected, enabling streaming")
+        else:
+            print("[Team] No prompt node connected, disabling streaming")
+
         self.instance = Team(
             id=self.id,
             name=self.team_name,
@@ -468,7 +484,7 @@ class AgnoTeam(ServiceNode):
             tool_hooks=[tool_hook],
             pre_hooks=guardrails if guardrails else [],
             events_to_skip=[],
-            stream=True,
+            stream=should_stream,
             **props
         )
 
@@ -493,13 +509,37 @@ class AgnoTeam(ServiceNode):
         print(f"About to run team with prompt: {self.prompt[:100]}...")
 
         try:
-            # In Agno v2, arun returns AsyncIterator[TeamRunOutputEvent] when stream=True
-            stream = self.instance.arun(
-                self.prompt,
-                stream=True,
-                stream_intermediate_steps=True,
-                show_full_reasoning=self.show_full_reasoning
-            )
+            # Get stream setting from instance (set based on prompt node connection)
+            should_stream = getattr(self.instance, 'stream', False)
+            print(f"[Team execute] Using stream={should_stream}")
+
+            if should_stream:
+                # In Agno v2, arun returns AsyncIterator[TeamRunOutputEvent] when stream=True
+                stream = self.instance.arun(
+                    self.prompt,
+                    stream=True,
+                    stream_intermediate_steps=True,
+                    show_full_reasoning=self.show_full_reasoning
+                )
+            else:
+                # When stream=False, arun returns a coroutine that resolves to TeamRunOutput
+                response = await self.instance.arun(
+                    self.prompt,
+                    stream=False,
+                    show_full_reasoning=self.show_full_reasoning
+                )
+                # Process non-streaming response
+                if hasattr(response, 'content'):
+                    content = response.content
+                    if hasattr(content, 'model_dump_json'):
+                        self.true_path = content.model_dump_json()
+                        print(f"[Team] Converted Pydantic model to JSON string: {self.true_path}")
+                    else:
+                        self.true_path = content
+                else:
+                    self.true_path = str(response)
+                self.false_path = False
+                return
 
             async def _collect_response(event_stream):
                 final_response = None
