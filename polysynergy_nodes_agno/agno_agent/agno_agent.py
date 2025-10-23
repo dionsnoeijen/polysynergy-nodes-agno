@@ -708,13 +708,11 @@ class AgnoAgent(ServiceNode):
                 stream = self.instance.acontinue_run(
                     run_id=paused_run_id,
                     updated_tools=paused_run.tools,
-                    show_full_reasoning=self.show_full_reasoning
                 )
             else:
                 # For other pause types, just call with run_id
                 stream = self.instance.acontinue_run(
                     run_id=paused_run_id,
-                    show_full_reasoning=self.show_full_reasoning
                 )
 
             # Collect the response from the stream
