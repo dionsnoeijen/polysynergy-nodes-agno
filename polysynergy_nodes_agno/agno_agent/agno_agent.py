@@ -704,6 +704,7 @@ class AgnoAgent(ServiceNode):
             # Collect the response from the stream
             async def _collect_response(event_stream):
                 final_response = None
+                accumulated_content = []
                 async for event in event_stream:
                     # Send chat events for resumed agent responses
                     event_type = getattr(event, 'event', None) or getattr(event, 'type', None)
@@ -733,11 +734,24 @@ class AgnoAgent(ServiceNode):
                         is_member_agent=False
                     )
 
-                    # Store the final response
-                    if hasattr(event, 'run_response'):
-                        final_response = event.run_response
-                    elif hasattr(event, 'content'):
-                        final_response = event
+                    # Store FINAL response events (not intermediate content)
+                    if event_type in ['RunResponse', 'AgentRunResponse', 'RunCompleted']:
+                        if hasattr(event, 'run_response'):
+                            final_response = event.run_response
+
+                    # Accumulate streaming content as fallback
+                    if hasattr(event, 'content') and event_type == 'RunContent':
+                        accumulated_content.append(event.content)
+
+                # Use final response or accumulated content
+                if final_response is None and accumulated_content:
+                    # Join all content pieces
+                    combined_content = ''.join(str(c) for c in accumulated_content)
+                    # Create a simple response object
+                    class SimpleResponse:
+                        def __init__(self, content):
+                            self.content = content
+                    final_response = SimpleResponse(combined_content)
 
                 return final_response
 
@@ -912,6 +926,7 @@ Do NOT invent or simplify filenames. Use the complete path as shown.
 
             async def _collect_response(event_stream):
                 final_response = None
+                accumulated_content = []
                 event_count = 0
                 async for event in event_stream:
                     event_count += 1
@@ -936,7 +951,7 @@ Do NOT invent or simplify filenames. Use the complete path as shown.
                         node_id = self.id  # Use the agent node's own ID
                     else:
                         node_id = None
-                    
+
                     send_chat_stream_event(
                         flow_id=self.context.node_setup_version_id,
                         run_id=self.context.run_id,
@@ -945,13 +960,26 @@ Do NOT invent or simplify filenames. Use the complete path as shown.
                         agent_role="single",
                         is_member_agent=False
                     )
-                    
-                    # Store the final response
-                    if hasattr(event, 'run_response'):
-                        final_response = event.run_response
-                    elif hasattr(event, 'content'):
-                        final_response = event
-                        
+
+                    # Store FINAL response events (not intermediate content)
+                    if event_type in ['RunResponse', 'AgentRunResponse', 'RunCompleted']:
+                        if hasattr(event, 'run_response'):
+                            final_response = event.run_response
+
+                    # Accumulate streaming content as fallback
+                    if hasattr(event, 'content') and event_type == 'RunContent':
+                        accumulated_content.append(event.content)
+
+                # Use final response or accumulated content
+                if final_response is None and accumulated_content:
+                    # Join all content pieces
+                    combined_content = ''.join(str(c) for c in accumulated_content)
+                    # Create a simple response object
+                    class SimpleResponse:
+                        def __init__(self, content):
+                            self.content = content
+                    final_response = SimpleResponse(combined_content)
+
                 return final_response
 
             response = await _collect_response(stream)
