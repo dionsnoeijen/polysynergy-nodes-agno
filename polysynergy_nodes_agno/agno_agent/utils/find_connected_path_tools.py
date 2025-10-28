@@ -45,36 +45,60 @@ def create_tool_and_invoke(node: Node, tool_node, agent=None) -> Function:
     }
 
     # Create the entrypoint function that will execute the flow
-    async def flow_entrypoint(**kwargs):
+    # session_state is automatically injected by Agno as first parameter
+    async def flow_entrypoint(session_state=None, **kwargs):
         print(f'INVOKING AGNO TOOL: {function_name}', kwargs)
-        
+
         try:
             start_node = node.state.get_node_by_id(tool_node.id)
 
-            # Set arguments from function call into parameters dict
-            for arg_name, value in kwargs.items():
-                if hasattr(start_node, 'parameters') and isinstance(start_node.parameters, dict):
-                    # Update the parameters dict with runtime value
-                    start_node.parameters[arg_name] = value
-                    print(f"Updated parameters['{arg_name}'] = {value}")
-                else:
-                    # Fallback: set as attribute if parameters dict doesn't exist
-                    setattr(start_node, arg_name, value)
-                    print(f"Set {arg_name} = {value} as attribute")
-            
-            # Find the nodes in the tool subflow
+            # Find the nodes in the tool subflow FIRST
             nodes_for_tool, end_node = find_nodes_for_tool(start_node)
-            
+
             print('START_NODE', start_node)
             print('END_NODE', end_node)
             print('TOOL NODES', [getattr(n, 'handle', 'no_handle') for n in nodes_for_tool])
-            
+
             if not start_node or not end_node:
-                return f"Could not resolve tool subflow for {handle}"
-            
-            # Resurrect all nodes in the tool path
+                return f"Could not resolve tool subflow for {function_name}"
+
+            # IMPORTANT: Resurrect all nodes BEFORE setting any state
+            # This ensures nodes are in clean state for re-execution (like in loops)
+            # CRITICAL: Resurrect the path tool node itself first!
+            # find_nodes_until returns downstream nodes but NOT the start_node itself
+            start_node.resurrect()
+            print(f"[Path Tool] Resurrected start_node (path tool): {start_node.id}")
+
             for node_for_tool in nodes_for_tool:
                 node_for_tool.resurrect()
+
+            # CRITICAL: Also resurrect the end_node (AgnoToolResult)!
+            # find_nodes_until uses end_node as the stopping point, so it's NOT in nodes_for_tool
+            # Without this, second tool call reads stale result from first call
+            end_node.resurrect()
+            print(f"[Path Tool] Resurrected end_node (tool result): {end_node.id}")
+
+            print(f"[Path Tool] Resurrected {len(nodes_for_tool)} downstream nodes for execution")
+
+            # Use session_state parameter that Agno provides
+            # Agno automatically injects the correct session_state (we loaded it from DB in agno_agent.py)
+            if session_state is not None:
+                start_node.session_state = session_state
+                print(f"[Path Tool] Injected session_state from Agno: {session_state}")
+            else:
+                print(f"[Path Tool] No session_state provided by Agno")
+
+            # Set arguments from function call into parameters dict
+            # CRITICAL: Create a NEW dict instead of mutating the old one
+            # After resurrect(), mutating the old dict doesn't propagate via connections
+            if hasattr(start_node, 'parameters'):
+                start_node.parameters = {arg_name: value for arg_name, value in kwargs.items()}
+                print(f"Replaced start_node.parameters with NEW dict: {start_node.parameters}")
+            else:
+                # Fallback: set individual attributes
+                for arg_name, value in kwargs.items():
+                    setattr(start_node, arg_name, value)
+                    print(f"Set {arg_name} = {value} as attribute")
             
             # Enable the start node
             start_node.flow_state = FlowState.ENABLED
@@ -85,14 +109,24 @@ def create_tool_and_invoke(node: Node, tool_node, agent=None) -> Function:
             
             # Execute the flow starting from this node
             await node.flow.execute_node(start_node)
-            
-            # Reset flow state
-            start_node.flow_state = FlowState.PENDING
-            
-            print('RESULT', getattr(end_node, 'result', 'No result'))
-            
+
+            # The session_state dict was mutated by the path tool in-place
+            # Use the mutated session_state dict as the result (not end_node.result)
+            print(f'[Path Tool] Session state after execution: {session_state}')
+
+            # CRITICAL: Write back the mutated session_state to the agent
+            # Agno may not detect mutations to the dict, so we explicitly assign it back
+            if session_state is not None and hasattr(node, 'instance'):
+                node.instance.session_state = session_state
+                print(f"[Path Tool] Wrote back mutated session_state to agent: {session_state}")
+
+            # Read the actual result from end_node
+            tool_result = getattr(end_node, 'result', session_state)
+            print(f'[Path Tool] Tool result from end_node: {tool_result}')
+
             # Return the result from the end node
-            return str(getattr(end_node, 'result', 'No result'))
+            # Note: nodes will be resurrected at the start of the next tool invocation
+            return str(tool_result)
 
         except Exception as e:
             print(f"[Error invoking agno tool {function_name}]: {str(e)}")

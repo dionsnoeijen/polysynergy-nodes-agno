@@ -112,6 +112,12 @@ class AgnoPathTool(Node):
         )
     )
 
+    session_state: dict | None = NodeVariableSettings(
+        label="Session State",
+        has_out=True,
+        info="Agent session state (automatically injected from agent if available)"
+    )
+
     true_path: bool = PathSettings(default=True, label="On Call")
 
     def execute(self):

@@ -1,3 +1,6 @@
+import json
+
+from polysynergy_node_runner.setup_context.dock_property import dock_json
 from polysynergy_node_runner.setup_context.node_decorator import node
 from polysynergy_node_runner.setup_context.node_variable_settings import NodeVariableSettings
 from polysynergy_node_runner.setup_context.service_node import ServiceNode
@@ -19,10 +22,10 @@ class AgentSettingsSession(ServiceNode):
         'cache_session',
     ]
 
-    session_state: dict | None = NodeVariableSettings(
-        dock=True,
+    session_state: str | dict | list | None = NodeVariableSettings(
+        dock=dock_json(),
         info="Internal state object for this session an, persisted between runs.",
-        node=False
+        has_in=True
     )
 
     search_previous_sessions_history: bool = NodeVariableSettings(
@@ -51,4 +54,14 @@ class AgentSettingsSession(ServiceNode):
     )
 
     async def provide_instance(self) -> "AgentSettingsSession":
+        # Parse JSON string to dict if needed (for by-reference mutation)
+        if isinstance(self.session_state, str):
+            try:
+                self.session_state = json.loads(self.session_state)
+                print(f"[AgentSettingsSession] Parsed session_state from JSON string to dict: {self.session_state}")
+            except json.JSONDecodeError as e:
+                print(f"[AgentSettingsSession] WARNING: session_state is a string but not valid JSON: {e}")
+                print(f"[AgentSettingsSession] WARNING: Agno expects a dict, setting to empty dict")
+                self.session_state = {}
+
         return self

@@ -339,9 +339,8 @@ class AgnoAgent(ServiceNode):
 
     user_input_data: dict | bool | None = NodeVariableSettings(
         label="User Input Data",
-        dock=True,
-        has_in=True,
-        has_out=False,
+        dock=False,
+        node=False,
         info="User's input to resume paused execution (dict for input, bool for confirmation)"
     )
 
@@ -456,6 +455,34 @@ class AgnoAgent(ServiceNode):
             final_user_id = "default_user"
             print(f'USING DEFAULT USER ID: {final_user_id}')
 
+        # Load existing session_state from DB and use it as initial state
+        # This is critical because Agno passes the initial session_state to tools, not the DB value
+        if db and final_session_id and final_user_id and 'session_state' in props:
+            try:
+                existing_session = db.get_session(
+                    session_id=final_session_id,
+                    session_type=SessionType.AGENT,
+                    user_id=final_user_id
+                )
+                if existing_session and hasattr(existing_session, 'session_data') and existing_session.session_data:
+                    db_session_state = existing_session.session_data.get('session_state')
+                    if db_session_state:
+                        # MERGE: DB state takes precedence over initial state
+                        initial_state = props['session_state']
+                        merged_state = {**initial_state, **db_session_state}
+                        props['session_state'] = merged_state
+                        print(f"[Agent Init] Loaded and merged session_state from DB: {merged_state}")
+                    else:
+                        print(f"[Agent Init] No session_state in DB, using initial: {props['session_state']}")
+                else:
+                    print(f"[Agent Init] No existing session found, using initial: {props['session_state']}")
+            except Exception as e:
+                print(f"[Agent Init] Could not load session from DB: {e}, using initial session_state")
+                import traceback
+                traceback.print_exc()
+
+        print('PROPS!!!!!!', props)
+
         try:
             self.instance = Agent(
                 id=self.id,
@@ -480,6 +507,7 @@ class AgnoAgent(ServiceNode):
                 events_to_skip=[],
                 **props  # stream=True comes from props (set as default on line 382)
             )
+            print(f"[DEBUG] Agent created. agent.session_state = {self.instance.session_state}")
         except Exception as e:
             import traceback
             traceback.print_exc()
@@ -800,6 +828,10 @@ class AgnoAgent(ServiceNode):
             self.true_path = False
 
     async def execute(self):
+        import time
+        _exec_start = time.time()
+        print(f"[TIMING] ===== EXECUTE START =====")
+
         # RESUME PATH: Check if we're resuming from a paused state
         # Note: _paused_run_response won't be available after DynamoDB restore (it's private)
         # But we can detect resume by checking if pause_reason is set AND user_input_data is provided
@@ -870,7 +902,9 @@ Do NOT invent or simplify filenames. Use the complete path as shown.
             original_instructions = self.instructions or ""
             self.instructions = original_instructions + user_context + files_context
 
+        _step_start = time.time()
         await self._create_agent()
+        print(f"[TIMING] Agent creation: {time.time() - _step_start:.2f}s")
 
         if not self.prompt:
             print("No prompt provided")
@@ -930,6 +964,9 @@ Do NOT invent or simplify filenames. Use the complete path as shown.
             should_stream = getattr(self.instance, 'stream', False)
             print(f"[Agent execute] Using stream={should_stream}")
 
+            _arun_start = time.time()
+            print(f"[TIMING] Starting arun call...")
+
             if should_stream:
                 # In Agno v2, arun returns AsyncIterator when stream=True
                 stream = self.instance.arun(
@@ -950,6 +987,7 @@ Do NOT invent or simplify filenames. Use the complete path as shown.
                     files=files if files else None,
                     show_full_reasoning=self.show_full_reasoning
                 )
+                print(f"[TIMING] arun completed: {time.time() - _arun_start:.2f}s")
                 # Process non-streaming response
                 if hasattr(response, 'content'):
                     content = response.content
@@ -962,14 +1000,18 @@ Do NOT invent or simplify filenames. Use the complete path as shown.
                     print(f"Response has no content attribute, using str: {str(response)}")
                     self.true_path = str(response)
                 self.false_path = False
+                print(f"[TIMING] ===== TOTAL EXECUTE TIME: {time.time() - _exec_start:.2f}s =====")
                 return
 
             async def _collect_response(event_stream):
                 final_response = None
                 accumulated_content = []
                 event_count = 0
+                _stream_start = time.time()
                 async for event in event_stream:
                     event_count += 1
+                    if event_count == 1:
+                        print(f"[TIMING] First event received: {time.time() - _arun_start:.2f}s")
 
                     # Send chat events for agent responses
                     # Check if event has the necessary attributes
@@ -1020,6 +1062,8 @@ Do NOT invent or simplify filenames. Use the complete path as shown.
                             self.content = content
                     final_response = SimpleResponse(combined_content)
 
+                print(f"[TIMING] Stream collection completed: {time.time() - _stream_start:.2f}s")
+                print(f"[TIMING] Total arun+stream time: {time.time() - _arun_start:.2f}s")
                 return final_response
 
             response = await _collect_response(stream)
@@ -1041,6 +1085,9 @@ Do NOT invent or simplify filenames. Use the complete path as shown.
             else:
                 print(f"Response has no content attribute, using str: {str(response)}")
                 self.true_path = str(response)
+
+            print(f"[TIMING] ===== TOTAL EXECUTE TIME: {time.time() - _exec_start:.2f}s =====")
         except Exception as e:
+            print(f"[TIMING] ===== EXECUTE FAILED after {time.time() - _exec_start:.2f}s =====")
             self.false_path = NodeError.format(e, True)
             return
