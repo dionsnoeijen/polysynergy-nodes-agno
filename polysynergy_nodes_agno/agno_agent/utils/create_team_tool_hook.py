@@ -41,8 +41,14 @@ def create_team_tool_hook(context, function_name_to_node_id: Dict[str, str], mcp
         should_send_events = is_node_tool and is_valid_uuid(node_id)
 
         async def wrapper():
-            # Only send events for actual node tools
-            if should_send_events:
+            # Check if there's an active listener before sending events
+            has_listener = context.active_listeners.has_listener(
+                context.node_setup_version_id,
+                required_stage=context.stage
+            )
+
+            # Only send events for actual node tools AND if there's a listener
+            if should_send_events and has_listener:
                 send_flow_event(
                     flow_id=context.node_setup_version_id,
                     run_id=context.run_id,
@@ -63,8 +69,8 @@ def create_team_tool_hook(context, function_name_to_node_id: Dict[str, str], mcp
                 raise  # Re-raise so Agno can handle it properly
 
             finally:
-                # Only send end event for actual node tools
-                if should_send_events:
+                # Only send end event for actual node tools AND if there's a listener
+                if should_send_events and has_listener:
                     send_flow_event(
                         flow_id=context.node_setup_version_id,
                         run_id=context.run_id,

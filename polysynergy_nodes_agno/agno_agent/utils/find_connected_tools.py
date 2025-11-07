@@ -15,6 +15,10 @@ async def find_connected_tools(node: Node) -> list[dict]:
         # For tools, we need to handle the service discovery on the target node
         if hasattr(target_node, "provide_instance"):
             try:
+                # Resolve secrets before instantiating the tool
+                if hasattr(target_node, "_resolve_secret"):
+                    target_node._resolve_secret()
+
                 tool_instance = await target_node.provide_instance()
                 tools.append({
                     "node_id": target_node.id,

@@ -783,12 +783,17 @@ class AgnoAgent(ServiceNode):
 
                     # Accumulate streaming content as fallback
                     if hasattr(event, 'content') and event_type == 'RunContent':
-                        accumulated_content.append(event.content)
+                        content = event.content
+                        # Convert Pydantic models to JSON immediately
+                        if hasattr(content, 'model_dump_json'):
+                            accumulated_content.append(content.model_dump_json())
+                        else:
+                            accumulated_content.append(str(content))
 
                 # Use final response or accumulated content
                 if final_response is None and accumulated_content:
-                    # Join all content pieces
-                    combined_content = ''.join(str(c) for c in accumulated_content)
+                    # Content is already converted to strings, just join
+                    combined_content = ''.join(accumulated_content)
                     # Create a simple response object
                     class SimpleResponse:
                         def __init__(self, content):
@@ -1050,12 +1055,17 @@ Do NOT invent or simplify filenames. Use the complete path as shown.
 
                     # Accumulate streaming content as fallback
                     if hasattr(event, 'content') and event_type == 'RunContent':
-                        accumulated_content.append(event.content)
+                        content = event.content
+                        # Convert Pydantic models to JSON immediately
+                        if hasattr(content, 'model_dump_json'):
+                            accumulated_content.append(content.model_dump_json())
+                        else:
+                            accumulated_content.append(str(content))
 
                 # Use final response or accumulated content
                 if final_response is None and accumulated_content:
-                    # Join all content pieces
-                    combined_content = ''.join(str(c) for c in accumulated_content)
+                    # Content is already converted to strings, just join
+                    combined_content = ''.join(accumulated_content)
                     # Create a simple response object
                     class SimpleResponse:
                         def __init__(self, content):

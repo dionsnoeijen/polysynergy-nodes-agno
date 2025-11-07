@@ -85,8 +85,14 @@ def create_tool_hook(context, function_name_to_node_id: Dict[str, str], mcp_tool
         print(f"   Will send events: {is_valid_node}")
 
         async def wrapper():
-            # Only send events for actual node tools
-            if is_valid_node:
+            # Check if there's an active listener before sending events
+            has_listener = context.active_listeners.has_listener(
+                context.node_setup_version_id,
+                required_stage=context.stage
+            )
+
+            # Only send events for actual node tools AND if there's a listener
+            if is_valid_node and has_listener:
                 send_flow_event(
                     flow_id=context.node_setup_version_id,
                     run_id=context.run_id,
@@ -127,8 +133,8 @@ def create_tool_hook(context, function_name_to_node_id: Dict[str, str], mcp_tool
                 raise  # Re-raise so Agno can handle it properly
 
             finally:
-                # Only send end event for actual node tools
-                if is_valid_node:
+                # Only send end event for actual node tools AND if there's a listener
+                if is_valid_node and has_listener:
                     send_flow_event(
                         flow_id=context.node_setup_version_id,
                         run_id=context.run_id,

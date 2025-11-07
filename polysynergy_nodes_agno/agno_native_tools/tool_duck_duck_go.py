@@ -51,19 +51,19 @@ class DuckDuckGoTool(ServiceNode):
         info="Enable DuckDuckGo news function.",
     )
 
-    modifier: Optional[str] = NodeVariableSettings(
+    modifier: str = NodeVariableSettings(
         label="Modifier",
         dock=True,
         info="A modifier to be used in the search request (e.g., 'site:example.com').",
     )
 
-    fixed_max_results: Optional[int] = NodeVariableSettings(
+    fixed_max_results: int = NodeVariableSettings(
         label="Fixed Max Results",
         dock=True,
         info="Force a maximum number of results (overrides runtime max_results).",
     )
 
-    proxy: Optional[str] = NodeVariableSettings(
+    proxy: str = NodeVariableSettings(
         label="Proxy",
         dock=True,
         info="Proxy passed to DDGS.",

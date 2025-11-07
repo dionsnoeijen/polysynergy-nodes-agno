@@ -120,11 +120,42 @@ def create_tool_and_invoke(node: Node, tool_node, agent=None) -> Function:
                 node.instance.session_state = session_state
                 print(f"[Path Tool] Wrote back mutated session_state to agent: {session_state}")
 
-            # Read the actual result from end_node
-            tool_result = getattr(end_node, 'result', session_state)
-            print(f'[Path Tool] Tool result from end_node: {tool_result}')
+            # Find ALL executed AgnoToolResult nodes (not just the first one found)
+            # This handles multiple result nodes in different branches or parallel paths
+            executed_results = []
 
-            # Return the result from the end node
+            # Check all nodes in the tool subflow
+            for tool_node in nodes_for_tool:
+                if (tool_node.__class__.__name__.lower().startswith("agnotoolresult") and
+                    tool_node.flow_state == FlowState.EXECUTED):
+                    result = getattr(tool_node, 'result', None)
+                    executed_results.append(result)
+                    print(f'[Path Tool] Found executed result node: {tool_node.id} with result: {result}')
+
+            # Also check end_node (in case it wasn't in nodes_for_tool)
+            if (end_node.flow_state == FlowState.EXECUTED and
+                end_node not in [n for n in nodes_for_tool if n.__class__.__name__.lower().startswith("agnotoolresult")]):
+                result = getattr(end_node, 'result', None)
+                executed_results.append(result)
+                print(f'[Path Tool] Found executed end_node: {end_node.id} with result: {result}')
+
+            print(f'[Path Tool] Total executed result nodes: {len(executed_results)}')
+
+            # Smart return logic based on number of results
+            if len(executed_results) == 0:
+                # No executed results found, return session_state as fallback
+                tool_result = session_state
+                print(f'[Path Tool] No executed results found, returning session_state')
+            elif len(executed_results) == 1:
+                # Single result - return as-is (backwards compatible)
+                tool_result = executed_results[0]
+                print(f'[Path Tool] Single result found: {tool_result}')
+            else:
+                # Multiple results - return as list for LLM to interpret
+                tool_result = executed_results
+                print(f'[Path Tool] Multiple results found: {tool_result}')
+
+            # Return the result(s)
             # Note: nodes will be resurrected at the start of the next tool invocation
             return str(tool_result)
 
