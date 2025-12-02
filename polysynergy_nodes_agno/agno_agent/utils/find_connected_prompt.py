@@ -55,8 +55,11 @@ def _extract_prompt_data(prompt_node: Node) -> Optional[Dict[str, Any]]:
     print(f"[find_connected_prompt] user_list type={type(user_list)}, length={len(user_list) if isinstance(user_list, list) else 'N/A'}")
     print(f"[find_connected_prompt] user_list={user_list}")
 
-    # Session is optional but if we have no data at all, return None
-    if not active_user and not active_session:
+    # Ensure files is always a list
+    files_list = files if isinstance(files, list) else []
+
+    # Session and user are optional, but if we have no data at all (no user, no session, no files), return None
+    if not active_user and not active_session and not files_list:
         return None
 
     # Extract session name from session dict
@@ -90,6 +93,6 @@ def _extract_prompt_data(prompt_node: Node) -> Optional[Dict[str, Any]]:
         'user_context': user_context,
         'session_id': active_session,
         'session_name': session_name,
-        'files': files if isinstance(files, list) else [],
+        'files': files_list,
         'prompt_node_id': prompt_node.id
     }

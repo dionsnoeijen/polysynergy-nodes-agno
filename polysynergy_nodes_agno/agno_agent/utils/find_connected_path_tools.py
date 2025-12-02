@@ -126,18 +126,19 @@ def create_tool_and_invoke(node: Node, tool_node, agent=None) -> Function:
 
             # Check all nodes in the tool subflow
             for node_in_tool in nodes_for_tool:
-                if (node_in_tool.__class__.__name__.lower().startswith("agnotoolresult") and
-                    node_in_tool.flow_state == FlowState.EXECUTED):
+                if node_in_tool.__class__.__name__.lower().startswith("agnotoolresult"):
                     result = getattr(node_in_tool, 'result', None)
-                    executed_results.append(result)
-                    print(f'[Path Tool] Found executed result node: {node_in_tool.id} with result: {result}')
+                    if result is not None:
+                        executed_results.append(result)
+                        print(f'[Path Tool] Found result node: {node_in_tool.id} with result: {result}')
 
             # Also check end_node (in case it wasn't in nodes_for_tool)
-            if (end_node.flow_state == FlowState.EXECUTED and
+            if (end_node.__class__.__name__.lower().startswith("agnotoolresult") and
                 end_node not in [n for n in nodes_for_tool if n.__class__.__name__.lower().startswith("agnotoolresult")]):
                 result = getattr(end_node, 'result', None)
-                executed_results.append(result)
-                print(f'[Path Tool] Found executed end_node: {end_node.id} with result: {result}')
+                if result is not None:
+                    executed_results.append(result)
+                    print(f'[Path Tool] Found end_node: {end_node.id} with result: {result}')
 
             print(f'[Path Tool] Total executed result nodes: {len(executed_results)}')
 

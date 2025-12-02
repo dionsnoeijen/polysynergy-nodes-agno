@@ -21,10 +21,11 @@ class ModelAnthropic(ServiceNode):
 
     model: str | None = NodeVariableSettings(
         label="Model",
-        default="claude-3-5-sonnet-20241022",
+        default="claude-sonnet-4-20250514",
         group="model",
         dock=dock_property(select_values={
-            "claude-3-5-sonnet-20241022": "Claude 3.5 Sonnet (Latest)",
+            "claude-sonnet-4-20250514": "Claude Sonnet 4 (May 2025)",
+            "claude-3-5-sonnet-20241022": "Claude 3.5 Sonnet (Oct 2024)",
             "claude-3-5-sonnet-20240620": "Claude 3.5 Sonnet (June 2024)",
             "claude-3-5-haiku-20241022": "Claude 3.5 Haiku (Latest)",
             "claude-3-opus-20240229": "Claude 3 Opus",

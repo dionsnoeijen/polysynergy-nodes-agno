@@ -7,7 +7,7 @@ from agno.db import BaseDb
 from agno.db.base import SessionType
 from agno.models.base import Model
 from agno.team import Team
-from agno.media import Image, Audio, Video
+from agno.media import Image, Audio, Video, File
 
 from polysynergy_node_runner.setup_context.dock_property import dock_text_area, dock_property, dock_dict
 from polysynergy_node_runner.setup_context.node_decorator import node
@@ -920,18 +920,26 @@ Do NOT invent or simplify filenames. Use the complete path as shown.
         if agent_files:
             print(f"Agent will process {len(agent_files)} files: {agent_files}")
 
-        # Separate images from other files
+        # Check if we're using Anthropic (Claude) which requires base64 for PDFs
+        model_id = getattr(self.instance.model, 'id', '') or ''
+        is_anthropic = 'claude' in model_id.lower()
+        print(f"DEBUG: Model ID: {model_id}, is_anthropic: {is_anthropic}")
+
+        # Separate files by type
         image_paths = []
+        pdf_paths = []
         other_file_paths = []
 
         for file_path in agent_files:
             file_path_lower = file_path.lower()
             if any(file_path_lower.endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']):
                 image_paths.append(file_path)
+            elif file_path_lower.endswith('.pdf'):
+                pdf_paths.append(file_path)
             else:
                 other_file_paths.append(file_path)
 
-        # Download images as base64 (OpenAI cannot access presigned S3 URLs)
+        # Download images as base64 (models cannot access presigned S3 URLs)
         images = []
         if image_paths:
             print(f"DEBUG: Downloading {len(image_paths)} images as base64...")
@@ -941,11 +949,42 @@ Do NOT invent or simplify filenames. Use the complete path as shown.
                 images.append(Image(url=img_data['base64']))
             print(f"DEBUG: Successfully converted {len(images)} images to base64")
 
+        # Handle PDFs based on model type
+        pdf_file_objects = []
+        if pdf_paths:
+            if is_anthropic:
+                # Anthropic requires base64 content in File objects
+                print(f"DEBUG: Downloading {len(pdf_paths)} PDFs as base64 for Anthropic...")
+                base64_pdfs = download_images_as_base64(pdf_paths)
+                for pdf_data in base64_pdfs:
+                    print(f"DEBUG: Adding base64 PDF: {pdf_data['path']} ({pdf_data['mime_type']})")
+                    # Extract raw base64 content (remove data URL prefix)
+                    import base64
+                    base64_str = pdf_data['base64']
+                    if base64_str.startswith('data:'):
+                        # Remove 'data:application/pdf;base64,' prefix
+                        base64_str = base64_str.split(',', 1)[1]
+                    # Decode to bytes for Agno File object
+                    pdf_bytes = base64.b64decode(base64_str)
+                    # Create File object with content (bytes) instead of url
+                    pdf_file_objects.append(File(
+                        content=pdf_bytes,
+                        mime_type=pdf_data['mime_type'],
+                        format='pdf'
+                    ))
+                print(f"DEBUG: Successfully converted {len(pdf_file_objects)} PDFs to base64")
+            else:
+                # Other models can use presigned URLs
+                print(f"DEBUG: Generating presigned URLs for {len(pdf_paths)} PDFs...")
+                pdf_urls = generate_presigned_urls_for_files(pdf_paths)
+                for pdf_url in pdf_urls:
+                    pdf_file_objects.append(File(url=pdf_url))
+
         # Convert other files to presigned URLs
         agent_file_urls = generate_presigned_urls_for_files(other_file_paths) if other_file_paths else []
-        print(f"DEBUG: Generated {len(agent_file_urls)} presigned URLs for non-image files")
+        print(f"DEBUG: Generated {len(agent_file_urls)} presigned URLs for other files")
 
-        # Parse non-image files by type
+        # Parse non-image, non-PDF files by type
         audio = []
         videos = []
         files = []
@@ -959,7 +998,11 @@ Do NOT invent or simplify filenames. Use the complete path as shown.
             elif any(file_path_lower.endswith(ext) for ext in ['.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm']):
                 videos.append(Video(url=file_url))
             else:
-                files.append(file_url)
+                # Create File object with url - Agno v2 requires File objects, not strings
+                files.append(File(url=file_url))
+
+        # Add PDFs to files list
+        files.extend(pdf_file_objects)
 
         print(f"Files categorized - images: {len(images)}, audio: {len(audio)}, videos: {len(videos)}, files: {len(files)}")
         print(f"DEBUG: About to call arun with images={[str(img.url) for img in images]}")

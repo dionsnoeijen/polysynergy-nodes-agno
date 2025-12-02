@@ -11,14 +11,14 @@ logger = logging.getLogger(__name__)
 
 def download_images_as_base64(file_paths: List[str]) -> List[Dict[str, str]]:
     """
-    Download images from S3 and convert to base64 data URLs.
-    This is needed because OpenAI cannot access presigned S3 URLs directly.
+    Download files from S3 and convert to base64 data URLs.
+    This is needed because some AI models (OpenAI, Anthropic) cannot access presigned S3 URLs directly.
 
     Args:
-        file_paths: List of relative S3 file paths (e.g., 'chat/session-123/image.png')
+        file_paths: List of relative S3 file paths (e.g., 'chat/session-123/image.png', 'chat/session-123/document.pdf')
 
     Returns:
-        List of dicts with 'path', 'base64', and 'mime_type' for each image
+        List of dicts with 'path', 'base64', and 'mime_type' for each file
     """
     if not file_paths:
         return []
@@ -90,6 +90,7 @@ def _get_mime_type(file_path: str) -> str:
     ext = Path(file_path).suffix.lower()
 
     mime_types = {
+        # Images
         '.jpg': 'image/jpeg',
         '.jpeg': 'image/jpeg',
         '.png': 'image/png',
@@ -97,9 +98,18 @@ def _get_mime_type(file_path: str) -> str:
         '.bmp': 'image/bmp',
         '.webp': 'image/webp',
         '.svg': 'image/svg+xml',
+        # Documents
+        '.pdf': 'application/pdf',
+        '.txt': 'text/plain',
+        '.csv': 'text/csv',
+        '.json': 'application/json',
+        '.xml': 'text/xml',
+        '.html': 'text/html',
+        '.md': 'text/markdown',
+        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     }
 
-    return mime_types.get(ext, 'image/jpeg')  # Default to JPEG
+    return mime_types.get(ext, 'application/octet-stream')  # Default to binary
 
 
 def _get_unified_bucket_name(tenant_id: str, project_id: str) -> str:
