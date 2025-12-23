@@ -8,7 +8,7 @@ authors = ["Dion Snoeijen"]
 python = ">=3.12,<3.13"
 polysynergy_node_runner = { path = "../node_runner", develop = true }
 polysynergy_nodes = { path = "../nodes", develop = true }
-agno = "^2.2.5"
+agno = "^2.3.12"
 lancedb = "^0.17.0"
 exa-py = "^1.14.18"
 tweepy = "^4.16.0"
@@ -25,11 +25,11 @@ openai = "^1.93.0"
 openai-agents = "^0.1.0"
 mistralai = "^1.0"
 huggingface-hub = "^0.27.0"
-anthropic = "^0.72.0"
+anthropic = "^0.75.0"
 google-genai = "^0.2.2"
 groq = "^0.13.0"
 ollama = "^0.4.0"
-unstructured = {version = "^0.16.0", optional = true}
+unstructured = {version = "^0.18.0", optional = true}
 googlesearch-python = "^1.2.5"
 googlemaps = "^4.10.0"
 google-maps-places = "^0.5.0"

@@ -7,7 +7,7 @@ from agno.db import BaseDb
 from agno.db.base import SessionType
 from agno.models.base import Model
 from agno.team import Team
-from agno.media import Image, Audio, Video, File
+from agno.media import Image as AgnoImage, Audio, Video, File
 
 from polysynergy_node_runner.setup_context.dock_property import dock_text_area, dock_property, dock_dict
 from polysynergy_node_runner.setup_context.node_decorator import node
@@ -946,8 +946,58 @@ Do NOT invent or simplify filenames. Use the complete path as shown.
             base64_images = download_images_as_base64(image_paths)
             for img_data in base64_images:
                 print(f"DEBUG: Adding base64 image: {img_data['path']} ({img_data['mime_type']})")
-                images.append(Image(url=img_data['base64']))
-            print(f"DEBUG: Successfully converted {len(images)} images to base64")
+                # Extract raw base64 content and decode to bytes
+                import base64
+                base64_str = img_data['base64']
+                if base64_str.startswith('data:'):
+                    # Remove 'data:image/...;base64,' prefix
+                    base64_str = base64_str.split(',', 1)[1]
+                # Decode to bytes for Agno Image object
+                image_bytes = base64.b64decode(base64_str)
+
+                # Anthropic has a 5MB limit for images - resize if needed
+                MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB
+                if is_anthropic and len(image_bytes) > MAX_IMAGE_SIZE:
+                    print(f"DEBUG: Image too large ({len(image_bytes)} bytes), resizing for Anthropic...")
+                    try:
+                        from PIL import Image as PILImage
+                        import io
+                        # Open image
+                        pil_img = PILImage.open(io.BytesIO(image_bytes))
+                        original_format = pil_img.format or 'JPEG'
+
+                        # Calculate scale factor to get under 5MB (with some margin)
+                        scale_factor = 0.9
+                        while len(image_bytes) > MAX_IMAGE_SIZE and scale_factor > 0.1:
+                            new_width = int(pil_img.width * scale_factor)
+                            new_height = int(pil_img.height * scale_factor)
+                            resized_img = pil_img.resize((new_width, new_height), PILImage.Resampling.LANCZOS)
+
+                            # Save to bytes with quality reduction for JPEG
+                            buffer = io.BytesIO()
+                            if original_format.upper() in ['JPEG', 'JPG']:
+                                resized_img.save(buffer, format='JPEG', quality=85, optimize=True)
+                            elif original_format.upper() == 'PNG':
+                                # Convert to RGB if needed (for PNG with transparency)
+                                if resized_img.mode in ('RGBA', 'P'):
+                                    resized_img = resized_img.convert('RGB')
+                                resized_img.save(buffer, format='JPEG', quality=85, optimize=True)
+                            else:
+                                resized_img.save(buffer, format=original_format)
+
+                            image_bytes = buffer.getvalue()
+                            scale_factor -= 0.1
+                            print(f"DEBUG: Resized to {new_width}x{new_height}, size: {len(image_bytes)} bytes")
+
+                        print(f"DEBUG: Final image size: {len(image_bytes)} bytes")
+                    except ImportError:
+                        print("WARNING: PIL not available, cannot resize large image")
+                    except Exception as e:
+                        print(f"WARNING: Failed to resize image: {e}")
+
+                img_obj = AgnoImage(content=image_bytes)
+                images.append(img_obj)
+            print(f"DEBUG: Successfully converted {len(images)} images")
 
         # Handle PDFs based on model type
         pdf_file_objects = []
@@ -1005,7 +1055,6 @@ Do NOT invent or simplify filenames. Use the complete path as shown.
         files.extend(pdf_file_objects)
 
         print(f"Files categorized - images: {len(images)}, audio: {len(audio)}, videos: {len(videos)}, files: {len(files)}")
-        print(f"DEBUG: About to call arun with images={[str(img.url) for img in images]}")
 
         try:
             # Get stream setting from instance (set based on prompt node connection)

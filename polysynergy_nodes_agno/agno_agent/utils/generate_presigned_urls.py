@@ -34,14 +34,27 @@ def generate_presigned_urls_for_files(file_paths: List[str]) -> List[str]:
     bucket_name = _get_unified_bucket_name(tenant_id, project_id)
 
     try:
-        # Create S3 client
+        # Create S3 client - check for local S3 endpoint (MinIO) first
         is_lambda = os.getenv("AWS_EXECUTION_ENV") is not None
+        local_endpoint = os.getenv("S3_LOCAL_ENDPOINT")
 
-        if is_lambda:
+        if local_endpoint:
+            # MinIO / local S3-compatible storage
+            # For presigned URLs, use localhost endpoint so browser can access
+            public_endpoint = local_endpoint.replace("minio:", "localhost:")
+            s3_client = boto3.client(
+                's3',
+                endpoint_url=public_endpoint,
+                aws_access_key_id=os.getenv("S3_ACCESS_KEY", "minioadmin"),
+                aws_secret_access_key=os.getenv("S3_SECRET_KEY", "minioadmin"),
+                region_name=aws_region
+            )
+            logger.info(f"Using MinIO at {public_endpoint} for presigned URLs")
+        elif is_lambda:
             # In Lambda, use IAM role
             s3_client = boto3.client('s3', region_name=aws_region)
         else:
-            # Local development with explicit credentials
+            # Local development with explicit credentials (AWS S3)
             s3_client = boto3.client(
                 's3',
                 aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
